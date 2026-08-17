@@ -1321,23 +1321,29 @@ function generateOptions(){
   }
   if(picks.length === 0 && results.length > 0) picks.push(results[0]);
 
-  renderResults(pool, picks, size);
+  const shirtLabels = Math.random() < 0.5
+    ? { A: 'CAMISETA CLARA', B: 'CAMISETA OSCURA' }
+    : { A: 'CAMISETA OSCURA', B: 'CAMISETA CLARA' };
+
+  renderResults(pool, picks, size, shirtLabels);
 }
 
 let lastPicksData = [];
 
-function renderResults(pool, picks, size){
+function renderResults(pool, picks, size, shirtLabels){
   const panel = document.getElementById('resultsPanel');
   if(picks.length === 0){
     panel.innerHTML = '';
     return;
   }
+  shirtLabels = shirtLabels || { A: 'EQUIPO A', B: 'EQUIPO B' };
   lastPicksData = picks.map(r=>{
     const teamA = pool.filter(p=>r.teamAIds.has(p.id));
     const teamB = pool.filter(p=>!r.teamAIds.has(p.id));
     return {teamA, teamB, size};
   });
-  let html = `<div class="panel"><h2><span class="num">5</span> Opciones de equipos<span class="chevron">▾</span></h2><div class="panel-body">`;
+  let html = `<div class="panel"><h2><span class="num">5</span> Opciones de equipos<span class="chevron">▾</span></h2><div class="panel-body">
+    <p style="color:var(--chalk-dim);font-size:13px;margin:0 0 14px;">🎽 Sorteo de camiseta: <strong style="color:var(--gold);">${shirtLabels.A}</strong> vs <strong style="color:var(--gold);">${shirtLabels.B}</strong></p>`;
   picks.forEach((r, idx)=>{
     const teamA = [];
     const teamB = [];
@@ -1354,12 +1360,12 @@ function renderResults(pool, picks, size){
         </div>
         <div class="teams">
           <div class="team">
-            <div class="team-head"><span class="tname">EQUIPO A</span><span class="tavg">prom ${avgA}</span></div>
+            <div class="team-head"><span class="tname">${shirtLabels.A}</span><span class="tavg">prom ${avgA}</span></div>
             <ul>${teamA.map(p=>`<li><span class="pn">${escapeHtml(p.name)}</span></li>`).join('')}</ul>
           </div>
           <div class="vs">VS</div>
           <div class="team">
-            <div class="team-head"><span class="tname">EQUIPO B</span><span class="tavg">prom ${avgB}</span></div>
+            <div class="team-head"><span class="tname">${shirtLabels.B}</span><span class="tavg">prom ${avgB}</span></div>
             <ul>${teamB.map(p=>`<li><span class="pn">${escapeHtml(p.name)}</span></li>`).join('')}</ul>
           </div>
         </div>
