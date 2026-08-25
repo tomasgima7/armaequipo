@@ -1330,6 +1330,11 @@ function generateOptions(){
 
 let lastPicksData = [];
 
+function streakBadge(stat){
+  if(!stat || !stat.streak || stat.streak < 3) return '';
+  return ` <span title="Racha de ${stat.streak} victorias" style="font-size:13px;">🔥${stat.streak}</span>`;
+}
+
 function renderResults(pool, picks, size, shirtLabels){
   const panel = document.getElementById('resultsPanel');
   if(picks.length === 0){
@@ -1337,6 +1342,7 @@ function renderResults(pool, picks, size, shirtLabels){
     return;
   }
   shirtLabels = shirtLabels || { A: 'EQUIPO A', B: 'EQUIPO B' };
+  const agg = computePlayerAggregates();
   lastPicksData = picks.map(r=>{
     const teamA = pool.filter(p=>r.teamAIds.has(p.id));
     const teamB = pool.filter(p=>!r.teamAIds.has(p.id));
@@ -1361,12 +1367,12 @@ function renderResults(pool, picks, size, shirtLabels){
         <div class="teams">
           <div class="team">
             <div class="team-head"><span class="tname">${shirtLabels.A}</span><span class="tavg">prom ${avgA}</span></div>
-            <ul>${teamA.map(p=>`<li><span class="pn">${escapeHtml(p.name)}</span></li>`).join('')}</ul>
+            <ul>${teamA.map(p=>`<li><span class="pn">${escapeHtml(p.name)}${streakBadge(agg[p.id])}</span></li>`).join('')}</ul>
           </div>
           <div class="vs">VS</div>
           <div class="team">
             <div class="team-head"><span class="tname">${shirtLabels.B}</span><span class="tavg">prom ${avgB}</span></div>
-            <ul>${teamB.map(p=>`<li><span class="pn">${escapeHtml(p.name)}</span></li>`).join('')}</ul>
+            <ul>${teamB.map(p=>`<li><span class="pn">${escapeHtml(p.name)}${streakBadge(agg[p.id])}</span></li>`).join('')}</ul>
           </div>
         </div>
         <button class="btn-record" data-toggle-idx="${idx}">✅ Se jugó esta opción — cargar resultado</button>
