@@ -1331,7 +1331,7 @@ function generateOptions(){
 let lastPicksData = [];
 
 function streakBadge(stat){
-  if(!stat || !stat.streak || stat.streak < 3) return '';
+  if(!stat || !stat.streak || stat.streak < 2) return '';
   return ` <span title="Racha de ${stat.streak} victorias" style="font-size:13px;">🔥${stat.streak}</span>`;
 }
 
