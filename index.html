@@ -1883,7 +1883,7 @@ function renderHistoryAndRanking(){
   });
 }
 
-document.getElementById('voteSubmitBtn').addEventListener('click', ()=>{
+document.getElementById('voteSubmitBtn').addEventListener('click', async ()=>{
   if(!selectedVoterId) return;
   const inputs = document.querySelectorAll('#voteBallotList input[type=range]');
   const newVotes = [];
@@ -1897,8 +1897,23 @@ document.getElementById('voteSubmitBtn').addEventListener('click', ()=>{
     }
   });
   votes = votes.concat(newVotes);
-  savePlayers();
+  try{
+    localStorage.setItem(VOTES_KEY, JSON.stringify(votes));
+  }catch(e){}
   showVoteStep('done');
+  if(currentCode && db){
+    const ref = db.collection('armaequipos').doc(currentCode);
+    try{
+      await db.runTransaction(async (tx)=>{
+        const doc = await tx.get(ref);
+        const serverVotes = (doc.exists && doc.data().votesJson) ? JSON.parse(doc.data().votesJson) : [];
+        const merged = serverVotes.concat(newVotes);
+        tx.set(ref, {votesJson: JSON.stringify(merged)}, {merge:true});
+      });
+    }catch(err){
+      console.error('Error guardando el voto en la nube', err);
+    }
+  }
 });
 
 if(voteMode){
