@@ -13,7 +13,7 @@
 **Verification approach:** This project has no automated test runner — testing today is manual, via the Claude Browser tool's `javascript_tool` (`window`-scoped JS execution) against a locally served copy of `index.html`. Every task's verification steps give the exact JS to run and the exact expected result — treat these the same as you would a `pytest` assertion. Start (or reuse) the local server with:
 
 ```bash
-curl -sf http://127.0.0.1:8123/index.html >/dev/null || (cd /e/Temp/claude/armaequipo_deploy && nohup npx http-server -p 8123 -c-1 > http.log 2>&1 & disown)
+curl -sf http://127.0.0.1:8123/index.html >/dev/null || (cd /e/Temp/claude/armaequipo_deploy/.worktrees/feature-peer-voting && nohup npx http-server -p 8123 -c-1 > http.log 2>&1 & disown)
 sleep 2
 ```
 
@@ -240,7 +240,7 @@ savePlayers();
 - [ ] **Step 6: Commit (local only — do not push)**
 
 ```bash
-cd /e/Temp/claude/armaequipo_deploy && git add index.html && git commit -m "$(cat <<'EOF'
+cd /e/Temp/claude/armaequipo_deploy/.worktrees/feature-peer-voting && git add index.html && git commit -m "$(cat <<'EOF'
 Add votes data plumbing (localStorage + Firestore)
 
 Introduces the votes array ({voterId, targetId, score}) and wires it
@@ -396,7 +396,7 @@ savePlayers();
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /e/Temp/claude/armaequipo_deploy && git add index.html && git commit -m "$(cat <<'EOF'
+cd /e/Temp/claude/armaequipo_deploy/.worktrees/feature-peer-voting && git add index.html && git commit -m "$(cat <<'EOF'
 Feed peer-vote average into rating/Elo/OVR calculation
 
 Adds effectiveRating(), which returns the average of a player's
@@ -483,7 +483,7 @@ renderAll();
 - [ ] **Step 3: Commit**
 
 ```bash
-cd /e/Temp/claude/armaequipo_deploy && git add index.html && git commit -m "$(cat <<'EOF'
+cd /e/Temp/claude/armaequipo_deploy/.worktrees/feature-peer-voting && git add index.html && git commit -m "$(cat <<'EOF'
 Show vote count/average in the admin roster panel
 
 Each player row now shows either their vote average and count, or a
@@ -711,7 +711,7 @@ Use `read_console_messages` with `onlyErrors: true` — expected: no errors (the
 - [ ] **Step 7: Commit**
 
 ```bash
-cd /e/Temp/claude/armaequipo_deploy && git add index.html && git commit -m "$(cat <<'EOF'
+cd /e/Temp/claude/armaequipo_deploy/.worktrees/feature-peer-voting && git add index.html && git commit -m "$(cat <<'EOF'
 Add vote-mode HTML scaffold and ?votar= detection
 
 Introduces the standalone three-panel voting layout (hidden by
@@ -817,7 +817,7 @@ savePlayers();
 - [ ] **Step 3: Commit**
 
 ```bash
-cd /e/Temp/claude/armaequipo_deploy && git add index.html && git commit -m "$(cat <<'EOF'
+cd /e/Temp/claude/armaequipo_deploy/.worktrees/feature-peer-voting && git add index.html && git commit -m "$(cat <<'EOF'
 Implement the vote screen's "who are you" step
 
 Renders the player-picker with already-voted names disabled, plus
@@ -932,7 +932,7 @@ renderAll();
 - [ ] **Step 3: Commit**
 
 ```bash
-cd /e/Temp/claude/armaequipo_deploy && git add index.html && git commit -m "$(cat <<'EOF'
+cd /e/Temp/claude/armaequipo_deploy/.worktrees/feature-peer-voting && git add index.html && git commit -m "$(cat <<'EOF'
 Implement the vote screen's ballot step
 
 Renders a 1.0-10.0 slider per teammate (excluding the voter), with
@@ -1043,7 +1043,7 @@ renderAll();
 - [ ] **Step 3: Commit**
 
 ```bash
-cd /e/Temp/claude/armaequipo_deploy && git add index.html && git commit -m "$(cat <<'EOF'
+cd /e/Temp/claude/armaequipo_deploy/.worktrees/feature-peer-voting && git add index.html && git commit -m "$(cat <<'EOF'
 Wire up vote submission
 
 Collects every touched ballot slider into the votes array on submit,
@@ -1156,7 +1156,7 @@ renderAll();
 - [ ] **Step 6: If any check above failed, fix the code in `index.html` now and re-run the failing scenario until it passes, then commit the fix**
 
 ```bash
-cd /e/Temp/claude/armaequipo_deploy && git add index.html && git commit -m "fix: address end-to-end verification findings"
+cd /e/Temp/claude/armaequipo_deploy/.worktrees/feature-peer-voting && git add index.html && git commit -m "fix: address end-to-end verification findings"
 ```
 
 (Skip this step entirely if everything passed on the first run — nothing to commit.)
@@ -1170,7 +1170,7 @@ cd /e/Temp/claude/armaequipo_deploy && git add index.html && git commit -m "fix:
 - [ ] **Step 1: Review the full diff before publishing**
 
 ```bash
-cd /e/Temp/claude/armaequipo_deploy && git log --oneline origin/main..HEAD && git diff origin/main..HEAD -- index.html
+cd /e/Temp/claude/armaequipo_deploy/.worktrees/feature-peer-voting && git log --oneline origin/main..HEAD && git diff origin/main..HEAD -- index.html
 ```
 
 Confirm the diff only contains the changes from Tasks 1-8 (votes plumbing, rating calc, admin display, vote screen, submit handler, any e2e fixes).
@@ -1182,7 +1182,7 @@ This pushes to the public `tomasgima7/armaequipo` repo on `main`, which triggers
 - [ ] **Step 3: Push**
 
 ```bash
-cd /e/Temp/claude/armaequipo_deploy && git push origin main
+cd /e/Temp/claude/armaequipo_deploy/.worktrees/feature-peer-voting && git push origin main
 ```
 
 - [ ] **Step 4: Wait for the Cloudflare Workers Build to finish and confirm success**
