@@ -412,7 +412,7 @@
   <p>Fútbol parejo, sin quejas</p>
 </div>
 
-<div class="wrap">
+<div class="wrap" id="appWrap">
 
   <div class="panel collapsed" id="syncPanel">
     <h2>🔄 Sincronizar entre dispositivos<span class="chevron">▾</span></h2>
@@ -574,6 +574,32 @@
 
 </div>
 
+<div class="wrap" id="voteWrap" style="display:none;">
+
+  <div class="panel" id="voteStepWho">
+    <div class="panel-body">
+      <div class="counter" id="voteCounter">Cargando...</div>
+      <p style="color:var(--chalk-dim);font-size:13px;margin:14px 0 8px;">¿Quién sos?</p>
+      <div class="group-pick" id="voteWhoList"></div>
+    </div>
+  </div>
+
+  <div class="panel" id="voteStepBallot" style="display:none;">
+    <div class="panel-body">
+      <p style="color:var(--chalk-dim);font-size:13px;margin:0 0 12px;">Puntuá del 1 al 10 a tus compañeros. Si no conocés bien a alguien, dejalo sin tocar y no se cuenta.</p>
+      <ul class="roster" id="voteBallotList"></ul>
+      <button class="btn-primary" id="voteSubmitBtn" style="margin-top:16px;">Enviar votos</button>
+    </div>
+  </div>
+
+  <div class="panel" id="voteStepDone" style="display:none;">
+    <div class="panel-body">
+      <p style="color:var(--chalk);font-size:16px;">¡Gracias! Tu voto ya quedó registrado.</p>
+    </div>
+  </div>
+
+</div>
+
 <script>
 let players = [];
 let groups = []; // [{id, playerIds:[...]}] - deben jugar juntos
@@ -604,6 +630,20 @@ let db = null;
 let unsubscribe = null;
 let currentCode = null;
 let applyingRemote = false; // evita loops al recibir datos remotos
+
+// ---- Modo votación (?votar=<codigo>) ----
+function getVoteCodeFromUrl(){
+  const raw = new URLSearchParams(location.search).get('votar');
+  if(!raw) return null;
+  return raw.trim().toLowerCase().replace(/\s+/g, '-');
+}
+const voteCode = getVoteCodeFromUrl();
+const voteMode = !!voteCode;
+let selectedVoterId = null;
+if(voteMode){
+  document.getElementById('appWrap').style.display = 'none';
+  document.getElementById('voteWrap').style.display = '';
+}
 
 function firebaseReady(){
   return firebaseConfig && firebaseConfig.apiKey;
@@ -918,6 +958,12 @@ function renderAll(){
   renderHistoryAndRanking();
   seedPartidoDomingo();
   updateCounter();
+  renderVoteScreen();
+}
+
+function renderVoteScreen(){
+  if(!voteMode) return;
+  // Se completa en la Tarea 5 (pantalla "¿quién sos?").
 }
 
 function renderRoster(){
@@ -1781,7 +1827,11 @@ function renderHistoryAndRanking(){
   });
 }
 
-loadPlayers();
+if(voteMode){
+  connectToGroup(voteCode);
+} else {
+  loadPlayers();
+}
 </script>
 </body>
 </html>
