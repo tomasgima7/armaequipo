@@ -579,10 +579,12 @@ let players = [];
 let groups = []; // [{id, playerIds:[...]}] - deben jugar juntos
 let avoidPairs = []; // [{id, playerIds:[a,b]}] - no deben jugar juntos
 let matches = []; // [{id, date, size, label, teamAIds:[], teamBIds:[], scoreA, scoreB, winner}]
+let votes = []; // [{voterId, targetId, score}] - votos de un jugador sobre otro
 const STORAGE_KEY = 'armaequipos_players';
 const GROUPS_KEY = 'armaequipos_groups';
 const AVOID_KEY = 'armaequipos_avoid';
 const MATCHES_KEY = 'armaequipos_matches';
+const VOTES_KEY = 'armaequipos_votes';
 const CODE_KEY = 'armaequipos_code';
 
 // -------- Configuración de Firebase (opcional) --------
@@ -641,11 +643,12 @@ function connectToGroup(rawCode){
     if(doc.exists && doc.data().playersJson){
       players = JSON.parse(doc.data().playersJson);
       matches = doc.data().matchesJson ? JSON.parse(doc.data().matchesJson) : [];
+      votes = doc.data().votesJson ? JSON.parse(doc.data().votesJson) : [];
       // groups/avoidPairs nunca viajan por Firestore: cada dispositivo mantiene
       // sus propias restricciones/grupos solo para esta sesión.
     } else {
       // el grupo no existe todavía: lo creamos con lo que tengamos localmente
-      db.collection('armaequipos').doc(code).set({playersJson: JSON.stringify(players), matchesJson: JSON.stringify(matches)});
+      db.collection('armaequipos').doc(code).set({playersJson: JSON.stringify(players), matchesJson: JSON.stringify(matches), votesJson: JSON.stringify(votes)});
     }
     renderAll();
     applyingRemote = false;
@@ -681,6 +684,14 @@ function loadPlayers(){
   }catch(e){
     matches = [];
   }
+  try{
+    const rawVotes = localStorage.getItem(VOTES_KEY);
+    if(rawVotes){
+      votes = JSON.parse(rawVotes);
+    }
+  }catch(e){
+    votes = [];
+  }
   renderAll();
 
   const savedCode = localStorage.getItem(CODE_KEY);
@@ -696,14 +707,16 @@ function loadPlayers(){
 function savePlayers(){
   // groups y avoidPairs son intencionalmente efímeros: nunca se escriben a
   // localStorage ni a Firestore, ni siquiera después de armar los equipos.
+  // votes sí se persiste: es la base de la calificación por votación de amigos.
   try{
     localStorage.setItem(STORAGE_KEY, JSON.stringify(players));
     localStorage.setItem(MATCHES_KEY, JSON.stringify(matches));
+    localStorage.setItem(VOTES_KEY, JSON.stringify(votes));
   }catch(e){
     console.error('No se pudo guardar', e);
   }
   if(currentCode && db && !applyingRemote){
-    db.collection('armaequipos').doc(currentCode).set({playersJson: JSON.stringify(players), matchesJson: JSON.stringify(matches)})
+    db.collection('armaequipos').doc(currentCode).set({playersJson: JSON.stringify(players), matchesJson: JSON.stringify(matches), votesJson: JSON.stringify(votes)})
       .catch(err=>{
         console.error(err);
         setSyncStatus('Error guardando en la nube. Se guardó localmente.', 'error');
