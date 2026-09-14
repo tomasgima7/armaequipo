@@ -640,12 +640,12 @@ function connectToGroup(rawCode){
     applyingRemote = true;
     if(doc.exists && doc.data().playersJson){
       players = JSON.parse(doc.data().playersJson);
-      groups = doc.data().groupsJson ? JSON.parse(doc.data().groupsJson) : [];
-      avoidPairs = doc.data().avoidJson ? JSON.parse(doc.data().avoidJson) : [];
       matches = doc.data().matchesJson ? JSON.parse(doc.data().matchesJson) : [];
+      // groups/avoidPairs nunca viajan por Firestore: cada dispositivo mantiene
+      // sus propias restricciones/grupos solo para esta sesión.
     } else {
       // el grupo no existe todavía: lo creamos con lo que tengamos localmente
-      db.collection('armaequipos').doc(code).set({playersJson: JSON.stringify(players), groupsJson: JSON.stringify(groups), avoidJson: JSON.stringify(avoidPairs), matchesJson: JSON.stringify(matches)});
+      db.collection('armaequipos').doc(code).set({playersJson: JSON.stringify(players), matchesJson: JSON.stringify(matches)});
     }
     renderAll();
     applyingRemote = false;
@@ -665,22 +665,14 @@ function loadPlayers(){
   }catch(e){
     players = [];
   }
+  // Los grupos ("juegan juntos") y restricciones ("no juntos") nunca se persisten:
+  // viven solo en memoria durante esta sesión. Se borra cualquier rastro guardado antes.
+  groups = [];
+  avoidPairs = [];
   try{
-    const rawGroups = localStorage.getItem(GROUPS_KEY);
-    if(rawGroups){
-      groups = JSON.parse(rawGroups);
-    }
-  }catch(e){
-    groups = [];
-  }
-  try{
-    const rawAvoid = localStorage.getItem(AVOID_KEY);
-    if(rawAvoid){
-      avoidPairs = JSON.parse(rawAvoid);
-    }
-  }catch(e){
-    avoidPairs = [];
-  }
+    localStorage.removeItem(GROUPS_KEY);
+    localStorage.removeItem(AVOID_KEY);
+  }catch(e){}
   try{
     const rawMatches = localStorage.getItem(MATCHES_KEY);
     if(rawMatches){
@@ -702,16 +694,16 @@ function loadPlayers(){
 }
 
 function savePlayers(){
+  // groups y avoidPairs son intencionalmente efímeros: nunca se escriben a
+  // localStorage ni a Firestore, ni siquiera después de armar los equipos.
   try{
     localStorage.setItem(STORAGE_KEY, JSON.stringify(players));
-    localStorage.setItem(GROUPS_KEY, JSON.stringify(groups));
-    localStorage.setItem(AVOID_KEY, JSON.stringify(avoidPairs));
     localStorage.setItem(MATCHES_KEY, JSON.stringify(matches));
   }catch(e){
     console.error('No se pudo guardar', e);
   }
   if(currentCode && db && !applyingRemote){
-    db.collection('armaequipos').doc(currentCode).set({playersJson: JSON.stringify(players), groupsJson: JSON.stringify(groups), avoidJson: JSON.stringify(avoidPairs), matchesJson: JSON.stringify(matches)})
+    db.collection('armaequipos').doc(currentCode).set({playersJson: JSON.stringify(players), matchesJson: JSON.stringify(matches)})
       .catch(err=>{
         console.error(err);
         setSyncStatus('Error guardando en la nube. Se guardó localmente.', 'error');
@@ -1712,7 +1704,7 @@ function renderHistoryAndRanking(){
   }
 
   const rankingBox = document.getElementById('rankingBox');
-  const ids = Object.keys(agg).filter(id=>agg[id].pj > 0);
+  const ids = Object.keys(agg).filter(id=>agg[id].pj > 0 && players.some(p=>p.id===id));
   if(ids.length === 0){
     rankingBox.innerHTML = '<p style="color:var(--chalk-dim);font-size:13px;">Todavía no hay partidos registrados. Generá equipos y registrá el resultado para empezar a armar el ranking.</p>';
   } else {
@@ -1738,7 +1730,7 @@ function renderHistoryAndRanking(){
   sorted.forEach(m=>{
     const fecha = new Date(m.date).toLocaleDateString('es-AR', {day:'2-digit',month:'2-digit',year:'numeric'});
     const winnerText = m.winner === 'empate' ? 'Empate' : (m.winner === 'A' ? 'Ganó Equipo A' : 'Ganó Equipo B');
-    const mvpText = m.mvpId ? ` · MVP: ${escapeHtml(playerName(m.mvpId))}` : '';
+    const mvpText = (m.mvpId && players.some(p=>p.id===m.mvpId)) ? ` · MVP: ${escapeHtml(playerName(m.mvpId))}` : '';
     h += `
       <div class="history-item" data-match-id="${m.id}">
         <div class="hleft">
