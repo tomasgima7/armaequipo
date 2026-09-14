@@ -931,10 +931,15 @@ function renderRoster(){
   }
   players.forEach(p=>{
     const li = document.createElement('li');
+    const received = votes.filter(v=>v.targetId===p.id);
+    const voteStatus = received.length > 0
+      ? `★ ${(received.reduce((s,v)=>s+v.score,0)/received.length).toFixed(1)} (${received.length} voto${received.length===1?'':'s'})`
+      : 'sin votos todavía (usando calificación manual)';
     li.innerHTML = `
       <div class="name-check">
         <div class="avatar-wrap" data-photo-id="${p.id}">${avatarHtml(p, 'avatar-sm')}</div>
         <span class="pname">${escapeHtml(p.name)}</span>
+        <span style="color:var(--chalk-dim);font-size:12px;white-space:nowrap;">${escapeHtml(voteStatus)}</span>
       </div>
       <button class="btn-ghost" data-id="${p.id}">Quitar</button>
     `;
