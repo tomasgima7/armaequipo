@@ -963,7 +963,40 @@ function renderAll(){
 
 function renderVoteScreen(){
   if(!voteMode) return;
-  // Se completa en la Tarea 5 (pantalla "¿quién sos?").
+  const votedIds = new Set(votes.map(v=>v.voterId));
+  const total = players.length;
+  document.getElementById('voteCounter').innerHTML = `Ya votaron <b>${votedIds.size}</b> de <b>${total}</b>`;
+
+  if(selectedVoterId){
+    // Ya eligió quién es: no repintar la pantalla actual (ballot o done) por
+    // actualizaciones en tiempo real de votos de otras personas.
+    if(votedIds.has(selectedVoterId)) showVoteStep('done');
+    return;
+  }
+
+  const whoList = document.getElementById('voteWhoList');
+  whoList.innerHTML = '';
+  players.forEach(p=>{
+    const already = votedIds.has(p.id);
+    const label = document.createElement('label');
+    label.innerHTML = `<span>${escapeHtml(p.name)}${already ? ' (ya votó)' : ''}</span>`;
+    if(already){
+      label.classList.add('disabled');
+    } else {
+      label.addEventListener('click', ()=>{
+        selectedVoterId = p.id;
+        showBallotFor(p.id);
+      });
+    }
+    whoList.appendChild(label);
+  });
+  showVoteStep('who');
+}
+
+function showVoteStep(step){
+  document.getElementById('voteStepWho').style.display = step==='who' ? '' : 'none';
+  document.getElementById('voteStepBallot').style.display = step==='ballot' ? '' : 'none';
+  document.getElementById('voteStepDone').style.display = step==='done' ? '' : 'none';
 }
 
 function renderRoster(){
