@@ -833,14 +833,24 @@ function uid(){ return 'p'+Math.random().toString(36).slice(2,9); }
 // ---- ELO ----
 function initialElo(rating){ return 1000 + rating*100; } // rating 5.0 -> 1500
 function eloToScore10(elo){ return (elo-1000)/100; }
+
+// Si el jugador tiene votos de sus compañeros, su calificación efectiva es el
+// promedio de esos votos. Si no tiene ninguno, se usa la calificación manual
+// (la que se le puso al agregarlo). El campo p.rating manual nunca se pisa.
+function effectiveRating(p){
+  const received = votes.filter(v=>v.targetId===p.id);
+  if(received.length === 0) return p.rating;
+  return received.reduce((sum,v)=>sum+v.score, 0) / received.length;
+}
+
 function combinedPower(p){
-  const eloScore = eloToScore10(p.elo !== undefined ? p.elo : initialElo(p.rating));
-  return (p.rating + eloScore) / 2;
+  const eloScore = eloToScore10(p.elo !== undefined ? p.elo : initialElo(effectiveRating(p)));
+  return (effectiveRating(p) + eloScore) / 2;
 }
 
 function recalculateAllElo(){
   const eloMap = {};
-  players.forEach(p=>{ eloMap[p.id] = initialElo(p.rating); });
+  players.forEach(p=>{ eloMap[p.id] = initialElo(effectiveRating(p)); });
   const K = 24;
   const sorted = [...matches]
     .filter(m=>m.winner && (m.teamAIds||[]).length && (m.teamBIds||[]).length)
@@ -861,7 +871,7 @@ function recalculateAllElo(){
 }
 
 function ovrFor(p){
-  const score10 = eloToScore10(p.elo !== undefined ? p.elo : initialElo(p.rating));
+  const score10 = eloToScore10(p.elo !== undefined ? p.elo : initialElo(effectiveRating(p)));
   return Math.max(1, Math.min(99, Math.round(score10*10)));
 }
 
