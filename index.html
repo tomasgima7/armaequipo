@@ -756,7 +756,11 @@ function savePlayers(){
     console.error('No se pudo guardar', e);
   }
   if(currentCode && db && !applyingRemote){
-    db.collection('armaequipos').doc(currentCode).set({playersJson: JSON.stringify(players), matchesJson: JSON.stringify(matches), votesJson: JSON.stringify(votes)})
+    // No se escribe votesJson acá: este write puede dispararse con un snapshot
+    // local de votes desatrasado respecto del servidor (p.ej. alguien votó
+    // mientras el admin tenía la página abierta), y un .set() sin merge lo
+    // pisaría. merge:true además evita borrar votesJson al omitirlo.
+    db.collection('armaequipos').doc(currentCode).set({playersJson: JSON.stringify(players), matchesJson: JSON.stringify(matches)}, {merge:true})
       .catch(err=>{
         console.error(err);
         setSyncStatus('Error guardando en la nube. Se guardó localmente.', 'error');
@@ -782,7 +786,7 @@ document.getElementById('exportBtn').addEventListener('click', ()=>{
     setImportStatus('No hay jugadores para exportar todavía.', 'error');
     return;
   }
-  const payload = { players, groups, avoidPairs, matches };
+  const payload = { players, groups, avoidPairs, matches, votes };
   const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -811,6 +815,7 @@ document.getElementById('importFile').addEventListener('change', (e)=>{
       const rawGroups = Array.isArray(data) ? [] : (data.groups || []);
       const rawAvoid = Array.isArray(data) ? [] : (data.avoidPairs || []);
       const rawMatches = Array.isArray(data) ? [] : (data.matches || []);
+      const rawVotes = Array.isArray(data) ? [] : (data.votes || []);
       if(!Array.isArray(rawPlayers)) throw new Error('Formato inválido');
       const idMap = {};
       const imported = rawPlayers.map(p=>{
@@ -856,6 +861,13 @@ document.getElementById('importFile').addEventListener('change', (e)=>{
           };
         })
         .filter(m=>m.teamAIds.length>0 || m.teamBIds.length>0);
+      votes = (rawVotes || [])
+        .map(v=>({
+          voterId: idMap[v.voterId],
+          targetId: idMap[v.targetId],
+          score: v.score
+        }))
+        .filter(v=>v.voterId && v.targetId);
       savePlayers();
       renderAll();
       setImportStatus(`Se importaron ${imported.length} jugador(es)${groups.length ? `, ${groups.length} grupo(s)` : ''}${avoidPairs.length ? `, ${avoidPairs.length} restricción(es)` : ''}${matches.length ? ` y ${matches.length} partido(s)` : ''}.`, 'ok');
@@ -1036,12 +1048,12 @@ function renderRoster(){
     const received = votes.filter(v=>v.targetId===p.id);
     const voteStatus = received.length > 0
       ? `★ ${(received.reduce((s,v)=>s+v.score,0)/received.length).toFixed(1)} (${received.length} voto${received.length===1?'':'s'})`
-      : 'sin votos todavía (usando calificación manual)';
+      : 'sin votos';
     li.innerHTML = `
       <div class="name-check">
         <div class="avatar-wrap" data-photo-id="${p.id}">${avatarHtml(p, 'avatar-sm')}</div>
         <span class="pname">${escapeHtml(p.name)}</span>
-        <span style="color:var(--chalk-dim);font-size:12px;white-space:nowrap;">${escapeHtml(voteStatus)}</span>
+        <span style="color:var(--chalk-dim);font-size:12px;white-space:nowrap;flex-shrink:0;">${escapeHtml(voteStatus)}</span>
       </div>
       <button class="btn-ghost" data-id="${p.id}">Quitar</button>
     `;
@@ -1055,6 +1067,7 @@ function renderRoster(){
         .map(g=>({...g, playerIds: g.playerIds.filter(id=>id!==p.id)}))
         .filter(g=>g.playerIds.length >= 2);
       avoidPairs = avoidPairs.filter(g=>!g.playerIds.includes(p.id));
+      votes = votes.filter(v => v.voterId !== p.id && v.targetId !== p.id);
       savePlayers();
       renderAll();
     });
@@ -1901,7 +1914,7 @@ document.getElementById('voteSubmitBtn').addEventListener('click', async ()=>{
     localStorage.setItem(VOTES_KEY, JSON.stringify(votes));
   }catch(e){}
   showVoteStep('done');
-  if(currentCode && db){
+  if(currentCode && db && newVotes.length > 0){
     const ref = db.collection('armaequipos').doc(currentCode);
     try{
       await db.runTransaction(async (tx)=>{
