@@ -1056,7 +1056,189 @@ EOF
 
 ---
 
-### Task 8: End-to-end verification against the spec's test plan
+### Task 8: Fix concurrent vote-write race with a Firestore transaction
+
+**Files:**
+- Modify: `index.html` — `voteSubmitBtn` click handler (added in Task 7)
+
+**Interfaces:**
+- Consumes: `db`, `currentCode` (existing globals), `selectedVoterId`, `showVoteStep()` (Task 5), `votes` (Task 1).
+- Produces: no new function — same handler, now writing through a Firestore transaction scoped to the `votesJson` field only, instead of going through the generic `savePlayers()` (which does a full-document, non-atomic `.set()` built from in-memory state).
+
+**Why:** Task 7's task review found a real, plausible bug: `savePlayers()` writes the *entire* group document from whatever the client currently has in memory. If two friends submit their ballots within the same short window (very likely right after a match, when everyone opens the vote link at once), the second submission's `.set()` can silently overwrite the first submission's just-written vote before the second client's `onSnapshot` listener has caught up — losing a vote, and since the "already voted" lock-out is derived from that same data, potentially letting someone vote twice by accident. This task fixes it for the vote-write path specifically, without touching how `players`/`matches` are saved elsewhere (those don't have the same multi-device-writing-at-once pattern in practice, so they're out of scope here — see spec's YAGNI guidance).
+
+- [ ] **Step 1: Replace the submit handler with a transactional version**
+
+Find:
+
+```js
+document.getElementById('voteSubmitBtn').addEventListener('click', ()=>{
+  if(!selectedVoterId) return;
+  const inputs = document.querySelectorAll('#voteBallotList input[type=range]');
+  const newVotes = [];
+  inputs.forEach(inp=>{
+    if(inp.dataset.touched === 'true'){
+      newVotes.push({
+        voterId: selectedVoterId,
+        targetId: inp.dataset.target,
+        score: parseFloat(parseFloat(inp.value).toFixed(1))
+      });
+    }
+  });
+  votes = votes.concat(newVotes);
+  savePlayers();
+  showVoteStep('done');
+});
+```
+
+Replace with:
+
+```js
+document.getElementById('voteSubmitBtn').addEventListener('click', async ()=>{
+  if(!selectedVoterId) return;
+  const inputs = document.querySelectorAll('#voteBallotList input[type=range]');
+  const newVotes = [];
+  inputs.forEach(inp=>{
+    if(inp.dataset.touched === 'true'){
+      newVotes.push({
+        voterId: selectedVoterId,
+        targetId: inp.dataset.target,
+        score: parseFloat(parseFloat(inp.value).toFixed(1))
+      });
+    }
+  });
+  votes = votes.concat(newVotes);
+  try{
+    localStorage.setItem(VOTES_KEY, JSON.stringify(votes));
+  }catch(e){}
+  showVoteStep('done');
+  if(currentCode && db){
+    const ref = db.collection('armaequipos').doc(currentCode);
+    try{
+      await db.runTransaction(async (tx)=>{
+        const doc = await tx.get(ref);
+        const serverVotes = (doc.exists && doc.data().votesJson) ? JSON.parse(doc.data().votesJson) : [];
+        const merged = serverVotes.concat(newVotes);
+        tx.set(ref, {votesJson: JSON.stringify(merged)}, {merge:true});
+      });
+    }catch(err){
+      console.error('Error guardando el voto en la nube', err);
+    }
+  }
+});
+```
+
+This shows the "done" step immediately (same UX as before) and updates `localStorage` right away, but the actual Firestore write now reads the *server's current* `votesJson` inside a transaction and merges the new votes into that fresh copy before writing — Firestore automatically retries the transaction if another write happened in between, so two overlapping submissions can no longer clobber each other. The transaction writes only the `votesJson` field (`{merge:true}`), so it can never revert a concurrent admin edit to `players`/`matches` either — stricter than the old full-document `savePlayers()` write for this path.
+
+- [ ] **Step 2: Verify — two "simultaneous" submissions both survive**
+
+Start (or reuse) the local server:
+
+```bash
+curl -sf http://127.0.0.1:8123/index.html >/dev/null || (cd /e/Temp/claude/armaequipo_deploy/.worktrees/feature-peer-voting && nohup npx http-server -p 8123 -c-1 > http.log 2>&1 & disown)
+sleep 2
+```
+
+Navigate to `http://127.0.0.1:8123/index.html?votar=race-plan-2026`. Once connected, simulate two clients racing by writing directly through two independent transactions back-to-back without letting either read the other's result first — this reproduces the race deterministically instead of relying on real timing:
+
+```js
+players.push({id:'r1', name:'Race Uno', rating:5.0, elo: initialElo(5.0), playing:true, photo:null});
+players.push({id:'r2', name:'Race Dos', rating:5.0, elo: initialElo(5.0), playing:true, photo:null});
+players.push({id:'r3', name:'Race Tres', rating:5.0, elo: initialElo(5.0), playing:true, photo:null});
+savePlayers();
+
+const ref = db.collection('armaequipos').doc('race-plan-2026');
+async function submitVoteTx(voterId, targetId, score){
+  await db.runTransaction(async (tx)=>{
+    const doc = await tx.get(ref);
+    const serverVotes = (doc.exists && doc.data().votesJson) ? JSON.parse(doc.data().votesJson) : [];
+    const merged = serverVotes.concat([{voterId, targetId, score}]);
+    tx.set(ref, {votesJson: JSON.stringify(merged)}, {merge:true});
+  });
+}
+// dos "votantes" distintos escribiendo su voto al mismo tiempo (Promise.all, sin esperar uno al otro)
+await Promise.all([
+  submitVoteTx('r1', 'r3', 8.0),
+  submitVoteTx('r2', 'r3', 6.0)
+]);
+const doc = await ref.get();
+const serverVotes = JSON.parse(doc.data().votesJson);
+JSON.stringify({
+  count: serverVotes.length,
+  hasR1Vote: serverVotes.some(v=>v.voterId==='r1' && v.targetId==='r3'),
+  hasR2Vote: serverVotes.some(v=>v.voterId==='r2' && v.targetId==='r3')
+});
+```
+
+Expected: `{"count":2,"hasR1Vote":true,"hasR2Vote":true}` — both concurrent writes survived; neither overwrote the other. (Before this fix, running the equivalent through the old `savePlayers()`-based `.set()` would frequently lose one of the two, since both clients would start from the same stale in-memory `votes` snapshot.)
+
+Clean up:
+
+```js
+players = players.filter(p=>!['r1','r2','r3'].includes(p.id));
+votes = [];
+savePlayers();
+await ref.delete();
+renderAll();
+```
+
+- [ ] **Step 3: Verify — the real submit button still works end-to-end (regression check)**
+
+Navigate to `http://127.0.0.1:8123/index.html?votar=race2-plan-2026`, wait for connection, then run the same flow as Task 7's Step 2 verification:
+
+```js
+players.push({id:'r1', name:'Race Uno', rating:5.0, elo: initialElo(5.0), playing:true, photo:null});
+players.push({id:'r2', name:'Race Dos', rating:5.0, elo: initialElo(5.0), playing:true, photo:null});
+savePlayers();
+renderAll();
+document.querySelectorAll('#voteWhoList label')[0].click();
+const range = document.querySelector('#voteBallotList input[data-target="r2"]');
+range.value = '7.5';
+range.dispatchEvent(new Event('input'));
+document.getElementById('voteSubmitBtn').click();
+JSON.stringify({ doneVisible: document.getElementById('voteStepDone').style.display !== 'none' });
+```
+
+Expected: `{"doneVisible":true}` immediately (the UI doesn't wait for the transaction). Then wait about a second for the transaction to land and check the server copy:
+
+```js
+const doc = await db.collection('armaequipos').doc('race2-plan-2026').get();
+JSON.parse(doc.data().votesJson);
+```
+
+Expected: an array containing `{"voterId":"r1","targetId":"r2","score":7.5}`.
+
+Clean up:
+
+```js
+players = players.filter(p=>!['r1','r2'].includes(p.id));
+votes = [];
+selectedVoterId = null;
+savePlayers();
+await db.collection('armaequipos').doc('race2-plan-2026').delete();
+renderAll();
+```
+
+- [ ] **Step 4: Commit**
+
+```bash
+cd /e/Temp/claude/armaequipo_deploy/.worktrees/feature-peer-voting && git add index.html && git commit -m "$(cat <<'EOF'
+Fix concurrent vote-write race with a Firestore transaction
+
+The submit handler previously saved votes through savePlayers(),
+which does a full-document, non-atomic .set() from in-memory state.
+Two friends submitting within the same short window could silently
+lose one vote. The vote write now goes through a transaction scoped
+to just the votesJson field, reading the server's current votes and
+merging before writing, so concurrent submissions no longer clobber
+each other.
+EOF
+)"
+```
+
+---
+
+### Task 9: End-to-end verification against the spec's test plan
 
 **Files:** none (verification only; fix forward in `index.html` if something fails)
 
@@ -1163,7 +1345,7 @@ cd /e/Temp/claude/armaequipo_deploy/.worktrees/feature-peer-voting && git add in
 
 ---
 
-### Task 9: Push and verify the live deploy
+### Task 10: Push and verify the live deploy
 
 **Files:** none (deployment step)
 
@@ -1173,7 +1355,7 @@ cd /e/Temp/claude/armaequipo_deploy/.worktrees/feature-peer-voting && git add in
 cd /e/Temp/claude/armaequipo_deploy/.worktrees/feature-peer-voting && git log --oneline origin/main..HEAD && git diff origin/main..HEAD -- index.html
 ```
 
-Confirm the diff only contains the changes from Tasks 1-8 (votes plumbing, rating calc, admin display, vote screen, submit handler, any e2e fixes).
+Confirm the diff only contains the changes from Tasks 1-9 (votes plumbing, rating calc, admin display, vote screen, submit handler, the concurrent-write fix, any e2e fixes).
 
 - [ ] **Step 2: Ask the user for explicit confirmation before pushing**
 
