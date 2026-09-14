@@ -999,6 +999,29 @@ function showVoteStep(step){
   document.getElementById('voteStepDone').style.display = step==='done' ? '' : 'none';
 }
 
+function showBallotFor(voterId){
+  const list = document.getElementById('voteBallotList');
+  list.innerHTML = '';
+  players.filter(p=>p.id!==voterId).forEach(p=>{
+    const li = document.createElement('li');
+    li.innerHTML = `
+      <span class="pname">${escapeHtml(p.name)}</span>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <input type="range" min="1" max="10" step="0.1" value="5.5" data-target="${p.id}" data-touched="false">
+        <span class="rating-display">–</span>
+      </div>
+    `;
+    const range = li.querySelector('input[type=range]');
+    const display = li.querySelector('.rating-display');
+    range.addEventListener('input', ()=>{
+      range.dataset.touched = 'true';
+      display.textContent = parseFloat(range.value).toFixed(1);
+    });
+    list.appendChild(li);
+  });
+  showVoteStep('ballot');
+}
+
 function renderRoster(){
   const list = document.getElementById('rosterList');
   const empty = document.getElementById('emptyMsg');
