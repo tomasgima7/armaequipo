@@ -412,7 +412,7 @@
   <p>Fútbol parejo, sin quejas</p>
 </div>
 
-<div class="wrap">
+<div class="wrap" id="appWrap">
 
   <div class="panel collapsed" id="syncPanel">
     <h2>🔄 Sincronizar entre dispositivos<span class="chevron">▾</span></h2>
@@ -574,15 +574,43 @@
 
 </div>
 
+<div class="wrap" id="voteWrap" style="display:none;">
+
+  <div class="panel" id="voteStepWho">
+    <div class="panel-body">
+      <div class="counter" id="voteCounter">Cargando...</div>
+      <p style="color:var(--chalk-dim);font-size:13px;margin:14px 0 8px;">¿Quién sos?</p>
+      <div class="group-pick" id="voteWhoList"></div>
+    </div>
+  </div>
+
+  <div class="panel" id="voteStepBallot" style="display:none;">
+    <div class="panel-body">
+      <p style="color:var(--chalk-dim);font-size:13px;margin:0 0 12px;">Puntuá del 1 al 10 a tus compañeros. Si no conocés bien a alguien, dejalo sin tocar y no se cuenta.</p>
+      <ul class="roster" id="voteBallotList"></ul>
+      <button class="btn-primary" id="voteSubmitBtn" style="margin-top:16px;">Enviar votos</button>
+    </div>
+  </div>
+
+  <div class="panel" id="voteStepDone" style="display:none;">
+    <div class="panel-body">
+      <p style="color:var(--chalk);font-size:16px;">¡Gracias! Tu voto ya quedó registrado.</p>
+    </div>
+  </div>
+
+</div>
+
 <script>
 let players = [];
 let groups = []; // [{id, playerIds:[...]}] - deben jugar juntos
 let avoidPairs = []; // [{id, playerIds:[a,b]}] - no deben jugar juntos
 let matches = []; // [{id, date, size, label, teamAIds:[], teamBIds:[], scoreA, scoreB, winner}]
+let votes = []; // [{voterId, targetId, score}] - votos de un jugador sobre otro
 const STORAGE_KEY = 'armaequipos_players';
 const GROUPS_KEY = 'armaequipos_groups';
 const AVOID_KEY = 'armaequipos_avoid';
 const MATCHES_KEY = 'armaequipos_matches';
+const VOTES_KEY = 'armaequipos_votes';
 const CODE_KEY = 'armaequipos_code';
 
 // -------- Configuración de Firebase (opcional) --------
@@ -602,6 +630,20 @@ let db = null;
 let unsubscribe = null;
 let currentCode = null;
 let applyingRemote = false; // evita loops al recibir datos remotos
+
+// ---- Modo votación (?votar=<codigo>) ----
+function getVoteCodeFromUrl(){
+  const raw = new URLSearchParams(location.search).get('votar');
+  if(!raw) return null;
+  return raw.trim().toLowerCase().replace(/\s+/g, '-');
+}
+const voteCode = getVoteCodeFromUrl();
+const voteMode = !!voteCode;
+let selectedVoterId = null;
+if(voteMode){
+  document.getElementById('appWrap').style.display = 'none';
+  document.getElementById('voteWrap').style.display = '';
+}
 
 function firebaseReady(){
   return firebaseConfig && firebaseConfig.apiKey;
@@ -641,11 +683,12 @@ function connectToGroup(rawCode){
     if(doc.exists && doc.data().playersJson){
       players = JSON.parse(doc.data().playersJson);
       matches = doc.data().matchesJson ? JSON.parse(doc.data().matchesJson) : [];
+      votes = doc.data().votesJson ? JSON.parse(doc.data().votesJson) : [];
       // groups/avoidPairs nunca viajan por Firestore: cada dispositivo mantiene
       // sus propias restricciones/grupos solo para esta sesión.
     } else {
       // el grupo no existe todavía: lo creamos con lo que tengamos localmente
-      db.collection('armaequipos').doc(code).set({playersJson: JSON.stringify(players), matchesJson: JSON.stringify(matches)});
+      db.collection('armaequipos').doc(code).set({playersJson: JSON.stringify(players), matchesJson: JSON.stringify(matches), votesJson: JSON.stringify(votes)});
     }
     renderAll();
     applyingRemote = false;
@@ -681,6 +724,14 @@ function loadPlayers(){
   }catch(e){
     matches = [];
   }
+  try{
+    const rawVotes = localStorage.getItem(VOTES_KEY);
+    if(rawVotes){
+      votes = JSON.parse(rawVotes);
+    }
+  }catch(e){
+    votes = [];
+  }
   renderAll();
 
   const savedCode = localStorage.getItem(CODE_KEY);
@@ -696,14 +747,20 @@ function loadPlayers(){
 function savePlayers(){
   // groups y avoidPairs son intencionalmente efímeros: nunca se escriben a
   // localStorage ni a Firestore, ni siquiera después de armar los equipos.
+  // votes sí se persiste: es la base de la calificación por votación de amigos.
   try{
     localStorage.setItem(STORAGE_KEY, JSON.stringify(players));
     localStorage.setItem(MATCHES_KEY, JSON.stringify(matches));
+    localStorage.setItem(VOTES_KEY, JSON.stringify(votes));
   }catch(e){
     console.error('No se pudo guardar', e);
   }
   if(currentCode && db && !applyingRemote){
-    db.collection('armaequipos').doc(currentCode).set({playersJson: JSON.stringify(players), matchesJson: JSON.stringify(matches)})
+    // No se escribe votesJson acá: este write puede dispararse con un snapshot
+    // local de votes desatrasado respecto del servidor (p.ej. alguien votó
+    // mientras el admin tenía la página abierta), y un .set() sin merge lo
+    // pisaría. merge:true además evita borrar votesJson al omitirlo.
+    db.collection('armaequipos').doc(currentCode).set({playersJson: JSON.stringify(players), matchesJson: JSON.stringify(matches)}, {merge:true})
       .catch(err=>{
         console.error(err);
         setSyncStatus('Error guardando en la nube. Se guardó localmente.', 'error');
@@ -729,7 +786,7 @@ document.getElementById('exportBtn').addEventListener('click', ()=>{
     setImportStatus('No hay jugadores para exportar todavía.', 'error');
     return;
   }
-  const payload = { players, groups, avoidPairs, matches };
+  const payload = { players, groups, avoidPairs, matches, votes };
   const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -758,6 +815,7 @@ document.getElementById('importFile').addEventListener('change', (e)=>{
       const rawGroups = Array.isArray(data) ? [] : (data.groups || []);
       const rawAvoid = Array.isArray(data) ? [] : (data.avoidPairs || []);
       const rawMatches = Array.isArray(data) ? [] : (data.matches || []);
+      const rawVotes = Array.isArray(data) ? [] : (data.votes || []);
       if(!Array.isArray(rawPlayers)) throw new Error('Formato inválido');
       const idMap = {};
       const imported = rawPlayers.map(p=>{
@@ -803,6 +861,13 @@ document.getElementById('importFile').addEventListener('change', (e)=>{
           };
         })
         .filter(m=>m.teamAIds.length>0 || m.teamBIds.length>0);
+      votes = (rawVotes || [])
+        .map(v=>({
+          voterId: idMap[v.voterId],
+          targetId: idMap[v.targetId],
+          score: v.score
+        }))
+        .filter(v=>v.voterId && v.targetId);
       savePlayers();
       renderAll();
       setImportStatus(`Se importaron ${imported.length} jugador(es)${groups.length ? `, ${groups.length} grupo(s)` : ''}${avoidPairs.length ? `, ${avoidPairs.length} restricción(es)` : ''}${matches.length ? ` y ${matches.length} partido(s)` : ''}.`, 'ok');
@@ -820,14 +885,24 @@ function uid(){ return 'p'+Math.random().toString(36).slice(2,9); }
 // ---- ELO ----
 function initialElo(rating){ return 1000 + rating*100; } // rating 5.0 -> 1500
 function eloToScore10(elo){ return (elo-1000)/100; }
+
+// Si el jugador tiene votos de sus compañeros, su calificación efectiva es el
+// promedio de esos votos. Si no tiene ninguno, se usa la calificación manual
+// (la que se le puso al agregarlo). El campo p.rating manual nunca se pisa.
+function effectiveRating(p){
+  const received = votes.filter(v=>v.targetId===p.id);
+  if(received.length === 0) return p.rating;
+  return received.reduce((sum,v)=>sum+v.score, 0) / received.length;
+}
+
 function combinedPower(p){
-  const eloScore = eloToScore10(p.elo !== undefined ? p.elo : initialElo(p.rating));
-  return (p.rating + eloScore) / 2;
+  const eloScore = eloToScore10(p.elo !== undefined ? p.elo : initialElo(effectiveRating(p)));
+  return (effectiveRating(p) + eloScore) / 2;
 }
 
 function recalculateAllElo(){
   const eloMap = {};
-  players.forEach(p=>{ eloMap[p.id] = initialElo(p.rating); });
+  players.forEach(p=>{ eloMap[p.id] = initialElo(effectiveRating(p)); });
   const K = 24;
   const sorted = [...matches]
     .filter(m=>m.winner && (m.teamAIds||[]).length && (m.teamBIds||[]).length)
@@ -848,7 +923,7 @@ function recalculateAllElo(){
 }
 
 function ovrFor(p){
-  const score10 = eloToScore10(p.elo !== undefined ? p.elo : initialElo(p.rating));
+  const score10 = eloToScore10(p.elo !== undefined ? p.elo : initialElo(effectiveRating(p)));
   return Math.max(1, Math.min(99, Math.round(score10*10)));
 }
 
@@ -895,6 +970,68 @@ function renderAll(){
   renderHistoryAndRanking();
   seedPartidoDomingo();
   updateCounter();
+  renderVoteScreen();
+}
+
+function renderVoteScreen(){
+  if(!voteMode) return;
+  const votedIds = new Set(votes.map(v=>v.voterId));
+  const total = players.length;
+  document.getElementById('voteCounter').innerHTML = `Ya votaron <b>${votedIds.size}</b> de <b>${total}</b>`;
+
+  if(selectedVoterId){
+    // Ya eligió quién es: no repintar la pantalla actual (ballot o done) por
+    // actualizaciones en tiempo real de votos de otras personas.
+    if(votedIds.has(selectedVoterId)) showVoteStep('done');
+    return;
+  }
+
+  const whoList = document.getElementById('voteWhoList');
+  whoList.innerHTML = '';
+  players.forEach(p=>{
+    const already = votedIds.has(p.id);
+    const label = document.createElement('label');
+    label.innerHTML = `<span>${escapeHtml(p.name)}${already ? ' (ya votó)' : ''}</span>`;
+    if(already){
+      label.classList.add('disabled');
+    } else {
+      label.addEventListener('click', ()=>{
+        selectedVoterId = p.id;
+        showBallotFor(p.id);
+      });
+    }
+    whoList.appendChild(label);
+  });
+  showVoteStep('who');
+}
+
+function showVoteStep(step){
+  document.getElementById('voteStepWho').style.display = step==='who' ? '' : 'none';
+  document.getElementById('voteStepBallot').style.display = step==='ballot' ? '' : 'none';
+  document.getElementById('voteStepDone').style.display = step==='done' ? '' : 'none';
+}
+
+function showBallotFor(voterId){
+  const list = document.getElementById('voteBallotList');
+  list.innerHTML = '';
+  players.filter(p=>p.id!==voterId).forEach(p=>{
+    const li = document.createElement('li');
+    li.innerHTML = `
+      <span class="pname">${escapeHtml(p.name)}</span>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <input type="range" min="1" max="10" step="0.1" value="5.5" data-target="${p.id}" data-touched="false">
+        <span class="rating-display">–</span>
+      </div>
+    `;
+    const range = li.querySelector('input[type=range]');
+    const display = li.querySelector('.rating-display');
+    range.addEventListener('input', ()=>{
+      range.dataset.touched = 'true';
+      display.textContent = parseFloat(range.value).toFixed(1);
+    });
+    list.appendChild(li);
+  });
+  showVoteStep('ballot');
 }
 
 function renderRoster(){
@@ -908,10 +1045,15 @@ function renderRoster(){
   }
   players.forEach(p=>{
     const li = document.createElement('li');
+    const received = votes.filter(v=>v.targetId===p.id);
+    const voteStatus = received.length > 0
+      ? `★ ${(received.reduce((s,v)=>s+v.score,0)/received.length).toFixed(1)} (${received.length} voto${received.length===1?'':'s'})`
+      : 'sin votos';
     li.innerHTML = `
       <div class="name-check">
         <div class="avatar-wrap" data-photo-id="${p.id}">${avatarHtml(p, 'avatar-sm')}</div>
         <span class="pname">${escapeHtml(p.name)}</span>
+        <span style="color:var(--chalk-dim);font-size:12px;white-space:nowrap;flex-shrink:0;">${escapeHtml(voteStatus)}</span>
       </div>
       <button class="btn-ghost" data-id="${p.id}">Quitar</button>
     `;
@@ -925,6 +1067,7 @@ function renderRoster(){
         .map(g=>({...g, playerIds: g.playerIds.filter(id=>id!==p.id)}))
         .filter(g=>g.playerIds.length >= 2);
       avoidPairs = avoidPairs.filter(g=>!g.playerIds.includes(p.id));
+      votes = votes.filter(v => v.voterId !== p.id && v.targetId !== p.id);
       savePlayers();
       renderAll();
     });
@@ -1753,7 +1896,44 @@ function renderHistoryAndRanking(){
   });
 }
 
-loadPlayers();
+document.getElementById('voteSubmitBtn').addEventListener('click', async ()=>{
+  if(!selectedVoterId) return;
+  const inputs = document.querySelectorAll('#voteBallotList input[type=range]');
+  const newVotes = [];
+  inputs.forEach(inp=>{
+    if(inp.dataset.touched === 'true'){
+      newVotes.push({
+        voterId: selectedVoterId,
+        targetId: inp.dataset.target,
+        score: parseFloat(parseFloat(inp.value).toFixed(1))
+      });
+    }
+  });
+  votes = votes.concat(newVotes);
+  try{
+    localStorage.setItem(VOTES_KEY, JSON.stringify(votes));
+  }catch(e){}
+  showVoteStep('done');
+  if(currentCode && db && newVotes.length > 0){
+    const ref = db.collection('armaequipos').doc(currentCode);
+    try{
+      await db.runTransaction(async (tx)=>{
+        const doc = await tx.get(ref);
+        const serverVotes = (doc.exists && doc.data().votesJson) ? JSON.parse(doc.data().votesJson) : [];
+        const merged = serverVotes.concat(newVotes);
+        tx.set(ref, {votesJson: JSON.stringify(merged)}, {merge:true});
+      });
+    }catch(err){
+      console.error('Error guardando el voto en la nube', err);
+    }
+  }
+});
+
+if(voteMode){
+  connectToGroup(voteCode);
+} else {
+  loadPlayers();
+}
 </script>
 </body>
 </html>
