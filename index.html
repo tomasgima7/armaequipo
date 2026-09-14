@@ -1883,6 +1883,24 @@ function renderHistoryAndRanking(){
   });
 }
 
+document.getElementById('voteSubmitBtn').addEventListener('click', ()=>{
+  if(!selectedVoterId) return;
+  const inputs = document.querySelectorAll('#voteBallotList input[type=range]');
+  const newVotes = [];
+  inputs.forEach(inp=>{
+    if(inp.dataset.touched === 'true'){
+      newVotes.push({
+        voterId: selectedVoterId,
+        targetId: inp.dataset.target,
+        score: parseFloat(parseFloat(inp.value).toFixed(1))
+      });
+    }
+  });
+  votes = votes.concat(newVotes);
+  savePlayers();
+  showVoteStep('done');
+});
+
 if(voteMode){
   connectToGroup(voteCode);
 } else {
