@@ -452,6 +452,19 @@
           <span class="rating-display" id="pratingval">6.0</span>
         </div>
       </div>
+      <div class="field">
+        <label for="pIsGk" style="display:flex;align-items:center;gap:6px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:13px;">
+          <input type="checkbox" id="pIsGk">
+          <span>¿Es arquero?</span>
+        </label>
+      </div>
+      <div class="field" id="pGkRatingField" style="display:none;">
+        <label for="pGkRating">Calificación de arquero (1.0-10.0)</label>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <input type="range" id="pGkRating" min="1" max="10" step="0.1" value="6.0">
+          <span class="rating-display" id="pGkRatingVal">6.0</span>
+        </div>
+      </div>
       <button class="btn-primary" id="addBtn">Agregar</button>
     </div>
     <p style="color:var(--chalk-dim);font-size:12px;margin:8px 0 0;">Las calificaciones son privadas: nadie las ve en las listas, solo se usan para armar equipos parejos. Las fotos se guardan comprimidas para ahorrar espacio.</p>
@@ -1265,6 +1278,14 @@ document.getElementById('prating').addEventListener('input', (e)=>{
   document.getElementById('pratingval').textContent = parseFloat(e.target.value).toFixed(1);
 });
 
+document.getElementById('pIsGk').addEventListener('change', (e)=>{
+  document.getElementById('pGkRatingField').style.display = e.target.checked ? 'flex' : 'none';
+});
+
+document.getElementById('pGkRating').addEventListener('input', (e)=>{
+  document.getElementById('pGkRatingVal').textContent = parseFloat(e.target.value).toFixed(1);
+});
+
 let pendingPhoto = null;
 let photoEditTargetId = null;
 
@@ -1303,10 +1324,18 @@ document.getElementById('addBtn').addEventListener('click', ()=>{
   const name = nameInput.value.trim();
   if(!name) { nameInput.focus(); return; }
   const rating = parseFloat(parseFloat(ratingInput.value).toFixed(1));
-  players.push({id:uid(), name, rating, elo: initialElo(rating), playing:true, photo: pendingPhoto});
+  const gkCheckbox = document.getElementById('pIsGk');
+  const gkRatingInput = document.getElementById('pGkRating');
+  const isGoalkeeper = gkCheckbox.checked;
+  const gkRating = isGoalkeeper ? parseFloat(parseFloat(gkRatingInput.value).toFixed(1)) : null;
+  players.push({id:uid(), name, rating, elo: initialElo(rating), playing:true, photo: pendingPhoto, isGoalkeeper, gkRating});
   nameInput.value = '';
   ratingInput.value = 6.0;
   document.getElementById('pratingval').textContent = '6.0';
+  gkCheckbox.checked = false;
+  document.getElementById('pGkRatingField').style.display = 'none';
+  gkRatingInput.value = 6.0;
+  document.getElementById('pGkRatingVal').textContent = '6.0';
   pendingPhoto = null;
   document.getElementById('pphoto').value = '';
   document.getElementById('pphotoPreviewWrap').innerHTML = '<div class="avatar-sm avatar-initial">?</div>';
