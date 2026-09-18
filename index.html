@@ -1154,6 +1154,7 @@ function renderPickList(){
     `;
     li.querySelector('input').addEventListener('change', (e)=>{
       p.playing = e.target.checked;
+      renderGkPickSection();
       updateCounter();
     });
     list.appendChild(li);
