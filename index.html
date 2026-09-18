@@ -845,7 +845,9 @@ document.getElementById('importFile').addEventListener('change', (e)=>{
           rating,
           elo: (typeof p.elo === 'number') ? p.elo : initialElo(rating),
           photo: p.photo || null,
-          playing: true
+          playing: true,
+          isGoalkeeper: !!p.isGoalkeeper,
+          gkRating: (typeof p.gkRating === 'number') ? p.gkRating : null
         };
       }).filter(p=>p.name);
       if(imported.length === 0) throw new Error('El archivo no tiene jugadores válidos');
@@ -1119,7 +1121,7 @@ function renderRoster(){
             <span>¿Es arquero?</span>
           </label>
           <div class="field" id="gkRatingField-${p.id}" style="display:${p.isGoalkeeper ? 'flex' : 'none'};flex-direction:row;align-items:center;gap:10px;">
-            <label>Calificación de arquero</label>
+            <label for="gkRatingSlider-${p.id}">Calificación de arquero</label>
             <input type="range" id="gkRatingSlider-${p.id}" min="1" max="10" step="0.1" value="${gkRatingValue}">
             <span class="rating-display" id="gkRatingVal-${p.id}">${gkRatingValue.toFixed(1)}</span>
           </div>
@@ -1513,7 +1515,7 @@ function generateOptions(){
     const [gkA, gkB] = todaysGoalkeepers;
     const uA = playerToUnit[gkA.id], uB = playerToUnit[gkB.id];
     if(uA === uB){
-      warn.textContent = 'Los dos arqueros de hoy están en el mismo grupo fijo, no se pueden separar. Corregí la selección de arqueros o el grupo.';
+      warn.textContent = 'Los dos arqueros de hoy están en el mismo grupo fijo, no se pueden separar. Corregí el grupo fijo o cambiá quién juega de arquero.';
       document.getElementById('resultsPanel').innerHTML = '';
       return;
     }
