@@ -1636,11 +1636,12 @@ function renderResults(pool, picks, size, shirtLabels, gkIds){
     });
     const avgA = (r.sumA/size).toFixed(1);
     const avgB = (r.sumB/size).toFixed(1);
+    const avgDiff = Math.abs(parseFloat(avgA) - parseFloat(avgB)).toFixed(1);
     html += `
       <div class="option">
         <div class="option-title">
           <span>Opción ${idx+1}</span>
-          <span class="diff-tag">Diferencia: ${(r.diff/size).toFixed(1)} pts</span>
+          <span class="diff-tag">Diferencia: ${avgDiff} pts</span>
         </div>
         <div class="teams">
           <div class="team">
