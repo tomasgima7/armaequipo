@@ -1047,6 +1047,8 @@ function showBallotFor(voterId){
   showVoteStep('ballot');
 }
 
+let editingPlayerId = null;
+
 function renderRoster(){
   const list = document.getElementById('rosterList');
   const empty = document.getElementById('emptyMsg');
@@ -1065,16 +1067,23 @@ function renderRoster(){
     li.innerHTML = `
       <div class="name-check">
         <div class="avatar-wrap" data-photo-id="${p.id}">${avatarHtml(p, 'avatar-sm')}</div>
-        <span class="pname">${escapeHtml(p.name)}</span>
+        <span class="pname">${escapeHtml(p.name)}${p.isGoalkeeper ? ' 🧤' : ''}</span>
         <span style="color:var(--chalk-dim);font-size:12px;white-space:nowrap;flex-shrink:0;">${escapeHtml(voteStatus)}</span>
       </div>
-      <button class="btn-ghost" data-id="${p.id}">Quitar</button>
+      <div style="display:flex;gap:6px;flex-shrink:0;">
+        <button class="btn-ghost" data-edit-id="${p.id}">Editar</button>
+        <button class="btn-ghost" data-id="${p.id}">Quitar</button>
+      </div>
     `;
     li.querySelector('.avatar-wrap').addEventListener('click', ()=>{
       photoEditTargetId = p.id;
       document.getElementById('playerPhotoInput').click();
     });
-    li.querySelector('.btn-ghost').addEventListener('click', ()=>{
+    li.querySelector('[data-edit-id]').addEventListener('click', ()=>{
+      editingPlayerId = (editingPlayerId === p.id) ? null : p.id;
+      renderRoster();
+    });
+    li.querySelector('[data-id]').addEventListener('click', ()=>{
       players = players.filter(x=>x.id!==p.id);
       groups = groups
         .map(g=>({...g, playerIds: g.playerIds.filter(id=>id!==p.id)}))
@@ -1085,6 +1094,44 @@ function renderRoster(){
       renderAll();
     });
     list.appendChild(li);
+
+    if(editingPlayerId === p.id){
+      const editLi = document.createElement('li');
+      const gkRatingValue = (p.gkRating !== undefined && p.gkRating !== null) ? p.gkRating : 6.0;
+      editLi.innerHTML = `
+        <div style="display:flex;flex-direction:column;gap:10px;width:100%;padding:4px 0;">
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+            <input type="checkbox" id="gkToggle-${p.id}" ${p.isGoalkeeper ? 'checked' : ''}>
+            <span>¿Es arquero?</span>
+          </label>
+          <div class="field" id="gkRatingField-${p.id}" style="display:${p.isGoalkeeper ? 'flex' : 'none'};flex-direction:row;align-items:center;gap:10px;">
+            <label>Calificación de arquero</label>
+            <input type="range" id="gkRatingSlider-${p.id}" min="1" max="10" step="0.1" value="${gkRatingValue}">
+            <span class="rating-display" id="gkRatingVal-${p.id}">${gkRatingValue.toFixed(1)}</span>
+          </div>
+        </div>
+      `;
+      const toggle = editLi.querySelector(`#gkToggle-${p.id}`);
+      const ratingField = editLi.querySelector(`#gkRatingField-${p.id}`);
+      const slider = editLi.querySelector(`#gkRatingSlider-${p.id}`);
+      const val = editLi.querySelector(`#gkRatingVal-${p.id}`);
+      toggle.addEventListener('change', (e)=>{
+        p.isGoalkeeper = e.target.checked;
+        if(p.isGoalkeeper && (p.gkRating === undefined || p.gkRating === null)) p.gkRating = 6.0;
+        ratingField.style.display = p.isGoalkeeper ? 'flex' : 'none';
+        savePlayers();
+        renderAll();
+      });
+      slider.addEventListener('input', (e)=>{
+        const v = parseFloat(parseFloat(e.target.value).toFixed(1));
+        p.gkRating = v;
+        val.textContent = v.toFixed(1);
+      });
+      slider.addEventListener('change', ()=>{
+        savePlayers();
+      });
+      list.appendChild(editLi);
+    }
   });
 }
 
