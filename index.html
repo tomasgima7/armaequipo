@@ -917,6 +917,15 @@ function combinedPower(p){
   return (effectiveRating(p) + eloScore) / 2;
 }
 
+// Poder de un jugador jugando de arquero hoy: usa gkRating en vez de la
+// calificación de jugador de campo, pero el mismo Elo (no hay Elo separado
+// por rol). Si nunca se le cargó gkRating, se usa 6.0 como default.
+function gkCombinedPower(p){
+  const eloScore = eloToScore10(p.elo !== undefined ? p.elo : initialElo(effectiveRating(p)));
+  const gk = (p.gkRating !== undefined && p.gkRating !== null) ? p.gkRating : 6.0;
+  return (gk + eloScore) / 2;
+}
+
 function recalculateAllElo(){
   const eloMap = {};
   players.forEach(p=>{ eloMap[p.id] = initialElo(effectiveRating(p)); });
@@ -1445,6 +1454,11 @@ function generateOptions(){
   const warn = document.getElementById('warnMsg');
   if(n !== size*2) return;
 
+  const gkCandidates = pool.filter(p=>p.isGoalkeeper);
+  const todaysGoalkeepers = gkCandidates.length <= 2 ? gkCandidates : gkCandidates.filter(p=>selectedGkIds.has(p.id));
+  const todaysGkIdSet = new Set(todaysGoalkeepers.map(p=>p.id));
+  function powerOf(p){ return todaysGkIdSet.has(p.id) ? gkCombinedPower(p) : combinedPower(p); }
+
   const poolIds = new Set(pool.map(p=>p.id));
   const usedIds = new Set();
   const units = []; // {players:[...], size, sum}
@@ -1454,14 +1468,14 @@ function generateOptions(){
     const members = pool.filter(p=>g.playerIds.includes(p.id));
     if(members.length >= 2){
       const idx = units.length;
-      units.push({players: members, size: members.length, sum: members.reduce((s,p)=>s+combinedPower(p),0)});
+      units.push({players: members, size: members.length, sum: members.reduce((s,p)=>s+powerOf(p),0)});
       members.forEach(p=>{ usedIds.add(p.id); playerToUnit[p.id] = idx; });
     }
   });
   pool.forEach(p=>{
     if(!usedIds.has(p.id)){
       const idx = units.length;
-      units.push({players:[p], size:1, sum:combinedPower(p)});
+      units.push({players:[p], size:1, sum:powerOf(p)});
       playerToUnit[p.id] = idx;
     }
   });
@@ -1493,6 +1507,18 @@ function generateOptions(){
     warn.textContent = contradiction;
     document.getElementById('resultsPanel').innerHTML = '';
     return;
+  }
+
+  if(todaysGoalkeepers.length === 2){
+    const [gkA, gkB] = todaysGoalkeepers;
+    const uA = playerToUnit[gkA.id], uB = playerToUnit[gkB.id];
+    if(uA === uB){
+      warn.textContent = 'Los dos arqueros de hoy están en el mismo grupo fijo, no se pueden separar. Corregí la selección de arqueros o el grupo.';
+      document.getElementById('resultsPanel').innerHTML = '';
+      return;
+    }
+    adj[uA].add(uB);
+    adj[uB].add(uA);
   }
 
   // canonicalizar: unidad 0 siempre en el equipo A
@@ -1546,7 +1572,7 @@ function generateOptions(){
   }
   warn.textContent = '';
 
-  const totalSum = pool.reduce((s,p)=>s+combinedPower(p),0);
+  const totalSum = pool.reduce((s,p)=>s+powerOf(p),0);
   const results = partitions.map(teamAUnitIdx=>{
     const teamAIds = new Set();
     let sumA = 0;
@@ -1574,7 +1600,7 @@ function generateOptions(){
     ? { A: 'CAMISETA CLARA', B: 'CAMISETA OSCURA' }
     : { A: 'CAMISETA OSCURA', B: 'CAMISETA CLARA' };
 
-  renderResults(pool, picks, size, shirtLabels);
+  renderResults(pool, picks, size, shirtLabels, todaysGkIdSet);
 }
 
 let lastPicksData = [];
