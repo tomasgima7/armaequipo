@@ -523,6 +523,10 @@
     <div class="warn" id="warnMsg"></div>
     <p style="color:var(--chalk-dim);font-size:13px;margin:2px 0 10px;">Tildá quiénes juegan hoy (por defecto están todos marcados).</p>
     <ul class="roster" id="pickList"></ul>
+    <div id="gkPickSection" style="display:none;margin-top:14px;padding-top:14px;border-top:1px dashed var(--pitch-line);">
+      <p style="color:var(--chalk-dim);font-size:13px;margin:0 0 8px;">Elegí exactamente 2 arqueros para hoy:</p>
+      <div class="group-pick" id="gkPickList"></div>
+    </div>
     </div>
   </div>
 
@@ -975,6 +979,7 @@ function renderAll(){
   recalculateAllElo();
   renderRoster();
   renderPickList();
+  renderGkPickSection();
   renderGroupPickList();
   renderGroupChips();
   renderAvoidPickList();
@@ -1286,6 +1291,32 @@ document.getElementById('createAvoidBtn').addEventListener('click', ()=>{
   renderAll();
 });
 
+let selectedGkIds = new Set();
+
+function renderGkPickSection(){
+  const section = document.getElementById('gkPickSection');
+  const list = document.getElementById('gkPickList');
+  const candidates = players.filter(p=>p.isGoalkeeper && p.playing);
+  if(candidates.length < 3){
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = 'block';
+  list.innerHTML = '';
+  candidates.forEach(p=>{
+    const label = document.createElement('label');
+    label.innerHTML = `
+      <input type="checkbox" value="${p.id}" ${selectedGkIds.has(p.id) ? 'checked' : ''}>
+      <span>${escapeHtml(p.name)}</span>
+    `;
+    label.querySelector('input').addEventListener('change', (e)=>{
+      if(e.target.checked) selectedGkIds.add(p.id); else selectedGkIds.delete(p.id);
+      updateCounter();
+    });
+    list.appendChild(label);
+  });
+}
+
 function updateCounter(){
   const size = parseInt(document.getElementById('formatSel').value, 10);
   const needed = size*2;
@@ -1294,14 +1325,20 @@ function updateCounter(){
   document.getElementById('neededCount').textContent = needed;
   const warn = document.getElementById('warnMsg');
   const genBtn = document.getElementById('genBtn');
-  if(selected === needed && needed > 0){
-    warn.textContent = '';
-    genBtn.disabled = false;
-  } else {
+  const gkCandidates = players.filter(p=>p.isGoalkeeper && p.playing);
+  const validSelectedCount = Array.from(selectedGkIds).filter(id=>gkCandidates.some(p=>p.id===id)).length;
+  const gkOk = gkCandidates.length <= 2 || validSelectedCount === 2;
+  if(selected !== needed || needed === 0){
     warn.textContent = selected < needed
       ? `Necesitás ${needed - selected} jugador(es) más marcado(s) para este formato.`
       : `Tenés ${selected - needed} jugador(es) de más marcado(s) para este formato.`;
     genBtn.disabled = true;
+  } else if(!gkOk){
+    warn.textContent = 'Elegí exactamente 2 arqueros para hoy.';
+    genBtn.disabled = true;
+  } else {
+    warn.textContent = '';
+    genBtn.disabled = false;
   }
 }
 
