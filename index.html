@@ -924,8 +924,19 @@ function combinedPower(p){
 // por rol). Si nunca se le cargó gkRating, se usa 6.0 como default.
 function gkCombinedPower(p){
   const eloScore = eloToScore10(p.elo !== undefined ? p.elo : initialElo(effectiveRating(p)));
-  const gk = (p.gkRating !== undefined && p.gkRating !== null) ? p.gkRating : 6.0;
-  return (gk + eloScore) / 2;
+  return (gkRatingOf(p) + eloScore) / 2;
+}
+
+function gkRatingOf(p){
+  return (p.gkRating !== undefined && p.gkRating !== null) ? p.gkRating : 6.0;
+}
+
+// Etiqueta con los puntajes por separado: ⚽ de jugador de campo y, si ataja,
+// 🧤 de arquero.
+function ratingsLabel(p){
+  const parts = [`⚽ ${effectiveRating(p).toFixed(1)}`];
+  if(p.isGoalkeeper) parts.push(`🧤 ${gkRatingOf(p).toFixed(1)}`);
+  return parts.join(' · ');
 }
 
 function recalculateAllElo(){
@@ -1077,13 +1088,11 @@ function renderRoster(){
   players.forEach(p=>{
     const li = document.createElement('li');
     const received = votes.filter(v=>v.targetId===p.id);
-    const voteStatus = received.length > 0
-      ? `★ ${(received.reduce((s,v)=>s+v.score,0)/received.length).toFixed(1)} (${received.length} voto${received.length===1?'':'s'})`
-      : 'sin votos';
+    const voteStatus = `${ratingsLabel(p)} (${received.length > 0 ? `${received.length} voto${received.length===1?'':'s'}` : 'sin votos'})`;
     li.innerHTML = `
       <div class="name-check">
         <div class="avatar-wrap" data-photo-id="${p.id}">${avatarHtml(p, 'avatar-sm')}</div>
-        <span class="pname">${escapeHtml(p.name)}${p.isGoalkeeper ? ' 🧤' : ''}</span>
+        <span class="pname">${escapeHtml(p.name)}</span>
         <span style="color:var(--chalk-dim);font-size:12px;white-space:nowrap;flex-shrink:0;">${escapeHtml(voteStatus)}</span>
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0;">
@@ -1612,6 +1621,15 @@ function streakBadge(stat){
   return ` <span title="Racha de ${stat.streak} victorias" style="font-size:13px;">🔥${stat.streak}</span>`;
 }
 
+// Cada jugador muestra el puntaje con el que entró al balance: 🧤 si ataja
+// hoy (usa su puntaje de arquero), ⚽ si juega de campo.
+function resultRow(p, gkIds, agg){
+  const isGk = gkIds.has(p.id);
+  const power = isGk ? gkCombinedPower(p) : combinedPower(p);
+  const title = isGk ? 'Ataja hoy: se usa su puntaje de arquero' : 'Juega de campo: se usa su puntaje de jugador';
+  return `<li><span class="pn">${isGk ? '🧤 ' : ''}${escapeHtml(p.name)}${streakBadge(agg[p.id])}</span><span class="pr" title="${title}" style="font-size:12px;white-space:nowrap;">${isGk ? '🧤' : '⚽'} ${power.toFixed(1)}</span></li>`;
+}
+
 function renderResults(pool, picks, size, shirtLabels, gkIds){
   const panel = document.getElementById('resultsPanel');
   if(picks.length === 0){
@@ -1646,12 +1664,12 @@ function renderResults(pool, picks, size, shirtLabels, gkIds){
         <div class="teams">
           <div class="team">
             <div class="team-head"><span class="tname">${shirtLabels.A}</span><span class="tavg">prom ${avgA}</span></div>
-            <ul>${teamA.map(p=>`<li><span class="pn">${gkIds.has(p.id) ? '🧤 ' : ''}${escapeHtml(p.name)}${streakBadge(agg[p.id])}</span></li>`).join('')}</ul>
+            <ul>${teamA.map(p=>`${resultRow(p, gkIds, agg)}`).join('')}</ul>
           </div>
           <div class="vs">VS</div>
           <div class="team">
             <div class="team-head"><span class="tname">${shirtLabels.B}</span><span class="tavg">prom ${avgB}</span></div>
-            <ul>${teamB.map(p=>`<li><span class="pn">${gkIds.has(p.id) ? '🧤 ' : ''}${escapeHtml(p.name)}${streakBadge(agg[p.id])}</span></li>`).join('')}</ul>
+            <ul>${teamB.map(p=>`${resultRow(p, gkIds, agg)}`).join('')}</ul>
           </div>
         </div>
         <button class="btn-record" data-toggle-idx="${idx}">✅ Se jugó esta opción — cargar resultado</button>
@@ -1976,6 +1994,7 @@ function renderHistoryAndRanking(){
           <span class="ovr-label">OVR</span>
           ${avatarHtml(p, 'avatar-big')}
           <div class="pname-card">${escapeHtml(p.name)}</div>
+          <div class="stat-row"><span>${ratingsLabel(p)}</span></div>
           <div class="stat-row">
             <span>PJ ${s.pj}</span><span>${s.winrate.toFixed(0)}%G</span>
           </div>
