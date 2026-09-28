@@ -467,7 +467,7 @@
       </div>
       <button class="btn-primary" id="addBtn">Agregar</button>
     </div>
-    <p style="color:var(--chalk-dim);font-size:12px;margin:8px 0 0;">Las calificaciones son privadas: nadie las ve en las listas, solo se usan para armar equipos parejos. Las fotos se guardan comprimidas para ahorrar espacio.</p>
+    <p style="color:var(--chalk-dim);font-size:12px;margin:8px 0 0;">En la lista se ve el puntaje de jugador (⚽) y, para los arqueros, el de arquero (🧤): cada uno es la calificación combinada con su Elo, que sube o baja según los partidos jugados en ese puesto. Las fotos se guardan comprimidas para ahorrar espacio.</p>
     <ul class="roster" id="rosterList"></ul>
     <div class="empty-msg" id="emptyMsg">Todavía no agregaste a nadie. Sumá a tus amigos con su nombre y una calificación del 1 al 10.</div>
     <input type="file" id="playerPhotoInput" accept="image/*" style="display:none;">
@@ -872,6 +872,7 @@ document.getElementById('importFile').addEventListener('change', (e)=>{
             label: m.label || '',
             teamAIds: (m.teamAIds||[]).map(id=>idMap[id]).filter(Boolean),
             teamBIds: (m.teamBIds||[]).map(id=>idMap[id]).filter(Boolean),
+            gkIds: (m.gkIds||[]).map(id=>idMap[id]).filter(Boolean),
             scoreA: m.scoreA,
             scoreB: m.scoreB,
             winner: m.winner,
@@ -919,11 +920,11 @@ function combinedPower(p){
   return (effectiveRating(p) + eloScore) / 2;
 }
 
-// Poder de un jugador jugando de arquero hoy: usa gkRating en vez de la
-// calificación de jugador de campo, pero el mismo Elo (no hay Elo separado
-// por rol). Si nunca se le cargó gkRating, se usa 6.0 como default.
+// Poder de un jugador jugando de arquero: calificación de arquero combinada
+// con su Elo de arquero, que solo se mueve con los partidos en los que atajó.
+// Si nunca se le cargó gkRating, se usa 6.0 como default.
 function gkCombinedPower(p){
-  const eloScore = eloToScore10(p.elo !== undefined ? p.elo : initialElo(effectiveRating(p)));
+  const eloScore = eloToScore10(p.gkElo !== undefined ? p.gkElo : initialElo(gkRatingOf(p)));
   return (gkRatingOf(p) + eloScore) / 2;
 }
 
@@ -931,17 +932,24 @@ function gkRatingOf(p){
   return (p.gkRating !== undefined && p.gkRating !== null) ? p.gkRating : 6.0;
 }
 
-// Etiqueta con los puntajes por separado: ⚽ de jugador de campo y, si ataja,
-// 🧤 de arquero.
-function ratingsLabel(p){
-  const parts = [`⚽ ${effectiveRating(p).toFixed(1)}`];
-  if(p.isGoalkeeper) parts.push(`🧤 ${gkRatingOf(p).toFixed(1)}`);
+// Etiqueta con los puntajes por separado (calificación combinada con Elo):
+// ⚽ de jugador de campo y, si ataja, 🧤 de arquero.
+function ratingsLabel(p, asText){
+  const parts = [`${asText ? 'JUG' : '⚽'} ${combinedPower(p).toFixed(1)}`];
+  if(p.isGoalkeeper) parts.push(`${asText ? 'ARQ' : '🧤'} ${gkCombinedPower(p).toFixed(1)}`);
   return parts.join(' · ');
 }
 
+// Cada jugador tiene dos Elo: el de campo y el de arquero. En cada partido se
+// usa (y se actualiza) el Elo de arquero de quienes atajaron (m.gkIds) y el de
+// campo del resto. Partidos sin gkIds cuentan a todos como jugadores de campo.
 function recalculateAllElo(){
   const eloMap = {};
-  players.forEach(p=>{ eloMap[p.id] = initialElo(effectiveRating(p)); });
+  const gkEloMap = {};
+  players.forEach(p=>{
+    eloMap[p.id] = initialElo(effectiveRating(p));
+    gkEloMap[p.id] = initialElo(gkRatingOf(p));
+  });
   const K = 24;
   const sorted = [...matches]
     .filter(m=>m.winner && (m.teamAIds||[]).length && (m.teamBIds||[]).length)
@@ -950,15 +958,20 @@ function recalculateAllElo(){
     const teamAIds = m.teamAIds.filter(id=>eloMap[id]!==undefined);
     const teamBIds = m.teamBIds.filter(id=>eloMap[id]!==undefined);
     if(teamAIds.length===0 || teamBIds.length===0) return;
-    const avgA = teamAIds.reduce((s,id)=>s+eloMap[id],0)/teamAIds.length;
-    const avgB = teamBIds.reduce((s,id)=>s+eloMap[id],0)/teamBIds.length;
+    const gkSet = new Set(m.gkIds || []);
+    const mapFor = id => gkSet.has(id) ? gkEloMap : eloMap;
+    const avgA = teamAIds.reduce((s,id)=>s+mapFor(id)[id],0)/teamAIds.length;
+    const avgB = teamBIds.reduce((s,id)=>s+mapFor(id)[id],0)/teamBIds.length;
     const expectedA = 1/(1+Math.pow(10,(avgB-avgA)/400));
     const actualA = m.winner==='A' ? 1 : (m.winner==='B' ? 0 : 0.5);
     const deltaA = K*(actualA-expectedA);
-    teamAIds.forEach(id=>{ eloMap[id]+=deltaA; });
-    teamBIds.forEach(id=>{ eloMap[id]-=deltaA; });
+    teamAIds.forEach(id=>{ mapFor(id)[id]+=deltaA; });
+    teamBIds.forEach(id=>{ mapFor(id)[id]-=deltaA; });
   });
-  players.forEach(p=>{ p.elo = Math.round(eloMap[p.id]); });
+  players.forEach(p=>{
+    p.elo = Math.round(eloMap[p.id]);
+    p.gkElo = Math.round(gkEloMap[p.id]);
+  });
 }
 
 function ovrFor(p){
@@ -1154,6 +1167,7 @@ function renderRoster(){
       });
       slider.addEventListener('change', ()=>{
         savePlayers();
+        renderAll();
       });
       list.appendChild(editLi);
     }
@@ -1642,7 +1656,7 @@ function renderResults(pool, picks, size, shirtLabels, gkIds){
   lastPicksData = picks.map(r=>{
     const teamA = pool.filter(p=>r.teamAIds.has(p.id));
     const teamB = pool.filter(p=>!r.teamAIds.has(p.id));
-    return {teamA, teamB, size};
+    return {teamA, teamB, size, gkIds: Array.from(gkIds)};
   });
   let html = `<div class="panel"><h2><span class="num">5</span> Opciones de equipos<span class="chevron">▾</span></h2><div class="panel-body">
     <p style="color:var(--chalk-dim);font-size:13px;margin:0 0 14px;">🎽 Sorteo de camiseta: <strong style="color:var(--gold);">${shirtLabels.A}</strong> vs <strong style="color:var(--gold);">${shirtLabels.B}</strong></p>`;
@@ -1744,6 +1758,7 @@ function renderResults(pool, picks, size, shirtLabels, gkIds){
         label: `Opción ${parseInt(idx)+1}`,
         teamAIds: data.teamA.map(p=>p.id),
         teamBIds: data.teamB.map(p=>p.id),
+        gkIds: data.gkIds,
         scoreA, scoreB, winner,
         playerStats, mvpId
       });
@@ -1994,7 +2009,7 @@ function renderHistoryAndRanking(){
           <span class="ovr-label">OVR</span>
           ${avatarHtml(p, 'avatar-big')}
           <div class="pname-card">${escapeHtml(p.name)}</div>
-          <div class="stat-row"><span>${ratingsLabel(p)}</span></div>
+          <div class="stat-row"><span>${ratingsLabel(p, true)}</span></div>
           <div class="stat-row">
             <span>PJ ${s.pj}</span><span>${s.winrate.toFixed(0)}%G</span>
           </div>
