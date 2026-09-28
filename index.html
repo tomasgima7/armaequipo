@@ -265,16 +265,20 @@
     text-align:center;
     position:relative;
   }
+  /* Fila de OVR arriba de la foto (en el flujo, para no taparla) */
+  .player-card .ovr-row{
+    display:flex;justify-content:space-between;align-items:flex-start;
+    margin:-4px 0 2px;
+  }
+  .player-card .ovr-box{display:flex;flex-direction:column;align-items:flex-start;}
+  .player-card .ovr-box.ovr-gk{align-items:flex-end;}
   .player-card .ovr{
-    position:absolute;top:8px;left:10px;
     font-family:'Bebas Neue',sans-serif;font-size:22px;color:var(--gold);
     line-height:1;
   }
   .player-card .ovr-label{
-    position:absolute;top:28px;left:10px;
-    font-size:8px;color:var(--chalk-dim);letter-spacing:1px;
+    font-size:8px;color:var(--chalk-dim);letter-spacing:1px;white-space:nowrap;
   }
-  .player-card .ovr.ovr-gk, .player-card .ovr-label.ovr-gk{left:auto;right:10px;}
   .avatar-big, .player-card .avatar-big.avatar-initial{
     width:64px;height:64px;border-radius:50%;object-fit:cover;
     border:2px solid var(--gold);margin:4px auto 6px;
@@ -1146,6 +1150,12 @@ function renderRoster(){
       const gkRatingValue = (p.gkRating !== undefined && p.gkRating !== null) ? p.gkRating : 6.0;
       editLi.innerHTML = `
         <div style="display:flex;flex-direction:column;gap:10px;width:100%;padding:4px 0;">
+          <div class="field" style="flex-direction:row;align-items:center;gap:10px;">
+            <label for="ratingSlider-${p.id}">Calificación de jugador</label>
+            <input type="range" id="ratingSlider-${p.id}" min="1" max="10" step="0.1" value="${p.rating}">
+            <span class="rating-display" id="ratingVal-${p.id}">${p.rating.toFixed(1)}</span>
+          </div>
+          ${received.length > 0 ? `<p style="color:var(--chalk-dim);font-size:12px;margin:0;">Tiene votos: mientras los tenga, su puntaje de jugador usa el promedio de votos, no esta calificación.</p>` : ''}
           <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
             <input type="checkbox" id="gkToggle-${p.id}" ${p.isGoalkeeper ? 'checked' : ''}>
             <span>¿Es arquero?</span>
@@ -1157,6 +1167,17 @@ function renderRoster(){
           </div>
         </div>
       `;
+      const fieldSlider = editLi.querySelector(`#ratingSlider-${p.id}`);
+      const fieldVal = editLi.querySelector(`#ratingVal-${p.id}`);
+      fieldSlider.addEventListener('input', (e)=>{
+        const v = parseFloat(parseFloat(e.target.value).toFixed(1));
+        p.rating = v;
+        fieldVal.textContent = v.toFixed(1);
+      });
+      fieldSlider.addEventListener('change', ()=>{
+        savePlayers();
+        renderAll();
+      });
       const toggle = editLi.querySelector(`#gkToggle-${p.id}`);
       const ratingField = editLi.querySelector(`#gkRatingField-${p.id}`);
       const slider = editLi.querySelector(`#gkRatingSlider-${p.id}`);
@@ -2013,9 +2034,10 @@ function renderHistoryAndRanking(){
       const ovr = ovrFor(p);
       return `
         <div class="player-card">
-          <span class="ovr">${ovr}</span>
-          <span class="ovr-label">${p.isGoalkeeper ? 'OVR JUG' : 'OVR'}</span>
-          ${p.isGoalkeeper ? `<span class="ovr ovr-gk">${gkOvrFor(p)}</span><span class="ovr-label ovr-gk">OVR ARQ 🧤</span>` : ''}
+          <div class="ovr-row">
+            <div class="ovr-box"><span class="ovr">${ovr}</span><span class="ovr-label">${p.isGoalkeeper ? 'OVR JUG' : 'OVR'}</span></div>
+            ${p.isGoalkeeper ? `<div class="ovr-box ovr-gk"><span class="ovr">${gkOvrFor(p)}</span><span class="ovr-label">OVR ARQ 🧤</span></div>` : ''}
+          </div>
           ${avatarHtml(p, 'avatar-big')}
           <div class="pname-card">${escapeHtml(p.name)}</div>
           <div class="stat-row"><span>${ratingsLabel(p, true)}</span></div>
