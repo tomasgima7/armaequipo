@@ -1664,13 +1664,16 @@ function streakBadge(stat){
   return ` <span title="Racha de ${stat.streak} victorias" style="font-size:13px;">🔥${stat.streak}</span>`;
 }
 
-// Cada jugador muestra el puntaje con el que entró al balance: 🧤 si ataja
-// hoy (usa su puntaje de arquero), ⚽ si juega de campo.
+// Sin puntajes: esta parte se comparte con el grupo (capturas / WhatsApp).
 function resultRow(p, gkIds, agg){
   const isGk = gkIds.has(p.id);
-  const power = isGk ? gkCombinedPower(p) : combinedPower(p);
-  const title = isGk ? 'Ataja hoy: se usa su puntaje de arquero' : 'Juega de campo: se usa su puntaje de jugador';
-  return `<li><span class="pn">${isGk ? '🧤 ' : ''}${escapeHtml(p.name)}${streakBadge(agg[p.id])}</span><span class="pr" title="${title}" style="font-size:12px;white-space:nowrap;">${isGk ? '🧤' : '⚽'} ${power.toFixed(1)}</span></li>`;
+  return `<li><span class="pn">${isGk ? '🧤 ' : ''}${escapeHtml(p.name)}${streakBadge(agg[p.id])}</span></li>`;
+}
+
+// Texto para compartir una opción por WhatsApp (solo nombres, sin puntajes).
+function shareText(data, shirtLabels, gkIds){
+  const lines = team => team.map(p=>`${gkIds.has(p.id) ? '🧤 ' : '• '}${p.name}`).join('\n');
+  return `⚽ Equipos armados\n\n*${shirtLabels.A}*\n${lines(data.teamA)}\n\n*${shirtLabels.B}*\n${lines(data.teamB)}`;
 }
 
 function renderResults(pool, picks, size, shirtLabels, gkIds){
@@ -1706,16 +1709,19 @@ function renderResults(pool, picks, size, shirtLabels, gkIds){
         </div>
         <div class="teams">
           <div class="team">
-            <div class="team-head"><span class="tname">${shirtLabels.A}</span><span class="tavg">prom ${avgA}</span></div>
+            <div class="team-head"><span class="tname">${shirtLabels.A}</span></div>
             <ul>${teamA.map(p=>`${resultRow(p, gkIds, agg)}`).join('')}</ul>
           </div>
           <div class="vs">VS</div>
           <div class="team">
-            <div class="team-head"><span class="tname">${shirtLabels.B}</span><span class="tavg">prom ${avgB}</span></div>
+            <div class="team-head"><span class="tname">${shirtLabels.B}</span></div>
             <ul>${teamB.map(p=>`${resultRow(p, gkIds, agg)}`).join('')}</ul>
           </div>
         </div>
-        <button class="btn-record" data-toggle-idx="${idx}">✅ Se jugó esta opción — cargar resultado</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn-record" data-share-idx="${idx}">📲 Compartir por WhatsApp</button>
+          <button class="btn-record" data-toggle-idx="${idx}">✅ Se jugó esta opción — cargar resultado</button>
+        </div>
         <div class="score-form" id="scoreForm-${idx}" style="display:none;">
           <div class="field"><label>Goles Equipo A</label><input type="number" min="0" id="scoreA-${idx}" value="0"></div>
           <div class="field"><label>Goles Equipo B</label><input type="number" min="0" id="scoreB-${idx}" value="0"></div>
@@ -1745,6 +1751,13 @@ function renderResults(pool, picks, size, shirtLabels, gkIds){
   panel.scrollIntoView({behavior:'smooth', block:'nearest'});
   panel.querySelectorAll('.panel').forEach(attachPanelToggle);
 
+  panel.querySelectorAll('[data-share-idx]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const data = lastPicksData[btn.getAttribute('data-share-idx')];
+      const text = shareText(data, shirtLabels, gkIds);
+      window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank');
+    });
+  });
   panel.querySelectorAll('[data-toggle-idx]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       const idx = btn.getAttribute('data-toggle-idx');
