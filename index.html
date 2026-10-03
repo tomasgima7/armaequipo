@@ -1680,7 +1680,17 @@ function shareText(data, shirtLabels, gkIds){
 function drawTeamsImage(options, shirtLabels, gkIds){
   const W = 1080, PAD = 56, ROW = 50, colW = (W - PAD*2 - 60) / 2;
   const maxRows = Math.max(...options.map(o=>Math.max(o.teamA.length, o.teamB.length)));
-  const optH = 70 + 60 + maxRows*ROW + 40;
+  const optH = 70 + 60 + 44 + maxRows*ROW + 40;
+  const agg = computePlayerAggregates();
+  // Racha (🔥N) y logros del jugador, igual que en la app.
+  const extras = p=>{
+    const st = agg[p.id];
+    if(!st) return '';
+    const icons = [];
+    if(st.streak >= 2) icons.push(`🔥${st.streak}`);
+    (st.badges || []).forEach(b=>{ if(b.icon !== '🔥') icons.push(b.icon); });
+    return icons.length ? '  ' + icons.join(' ') : '';
+  };
   const H = 200 + options.length*optH + 40;
   const c = document.createElement('canvas');
   c.width = W; c.height = H;
@@ -1714,15 +1724,18 @@ function drawTeamsImage(options, shirtLabels, gkIds){
     ctx.fillStyle = gold;
     ctx.font = "48px 'Bebas Neue', sans-serif";
     ctx.fillText(options.length > 1 ? `OPCIÓN ${i+1}` : 'EQUIPOS', PAD+24, top+58);
-    [[shirtLabels.A, o.teamA], [shirtLabels.B, o.teamB]].forEach(([label, team], k)=>{
+    [[shirtLabels.A, o.teamA, o.avgA], [shirtLabels.B, o.teamB, o.avgB]].forEach(([label, team, avg], k)=>{
       const x = PAD + 24 + k*(colW + 60);
       ctx.fillStyle = chalk;
       ctx.font = "40px 'Bebas Neue', sans-serif";
       ctx.fillText(label, x, top+118);
+      ctx.fillStyle = gold;
+      ctx.font = "30px 'Barlow', sans-serif";
+      ctx.fillText(`Promedio ${avg}`, x, top+160);
       ctx.font = "34px 'Barlow', sans-serif";
       team.forEach((p, r)=>{
         ctx.fillStyle = gkIds.has(p.id) ? gold : chalk;
-        ctx.fillText(`${gkIds.has(p.id) ? '🧤 ' : '• '}${p.name}`, x, top+118+ROW*(r+1), colW-10);
+        ctx.fillText(`${gkIds.has(p.id) ? '🧤 ' : '• '}${p.name}${extras(p)}`, x, top+162+ROW*(r+1), colW-10);
       });
     });
     ctx.textAlign = 'center';
@@ -1787,7 +1800,7 @@ function renderResults(pool, picks, size, shirtLabels, gkIds){
   lastPicksData = picks.map(r=>{
     const teamA = pool.filter(p=>r.teamAIds.has(p.id));
     const teamB = pool.filter(p=>!r.teamAIds.has(p.id));
-    return {teamA, teamB, size, gkIds: Array.from(gkIds)};
+    return {teamA, teamB, size, gkIds: Array.from(gkIds), avgA: (r.sumA/size).toFixed(1), avgB: (r.sumB/size).toFixed(1)};
   });
   let html = `<div class="panel"><h2><span class="num">5</span> Opciones de equipos<span class="chevron">▾</span></h2><div class="panel-body">
     <p style="color:var(--chalk-dim);font-size:13px;margin:0 0 14px;">🎽 Sorteo de camiseta: <strong style="color:var(--gold);">${shirtLabels.A}</strong> vs <strong style="color:var(--gold);">${shirtLabels.B}</strong></p>
