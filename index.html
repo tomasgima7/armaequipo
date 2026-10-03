@@ -1676,6 +1676,80 @@ function shareText(data, shirtLabels, gkIds){
   return `⚽ Equipos armados\n\n*${shirtLabels.A}*\n${lines(data.teamA)}\n\n*${shirtLabels.B}*\n${lines(data.teamB)}`;
 }
 
+// Imagen tipo card con todas las opciones (solo nombres, sin puntajes).
+function drawTeamsImage(options, shirtLabels, gkIds){
+  const W = 1080, PAD = 56, ROW = 50, colW = (W - PAD*2 - 60) / 2;
+  const maxRows = Math.max(...options.map(o=>Math.max(o.teamA.length, o.teamB.length)));
+  const optH = 70 + 60 + maxRows*ROW + 40;
+  const H = 200 + options.length*optH + 40;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const ctx = c.getContext('2d');
+  const css = getComputedStyle(document.documentElement);
+  const v = n => css.getPropertyValue(n).trim();
+  const gold = v('--gold'), chalk = v('--chalk'), dim = v('--chalk-dim');
+
+  // Fondo de cancha a rayas + borde dorado
+  for(let x=0; x<W; x+=160){
+    ctx.fillStyle = v('--pitch-mid'); ctx.fillRect(x, 0, 80, H);
+    ctx.fillStyle = v('--pitch-dark'); ctx.fillRect(x+80, 0, 80, H);
+  }
+  ctx.strokeStyle = gold; ctx.lineWidth = 8;
+  ctx.strokeRect(20, 20, W-40, H-40);
+
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = gold;
+  ctx.font = "84px 'Bebas Neue', sans-serif";
+  ctx.textAlign = 'center';
+  ctx.fillText('⚽ ARMAEQUIPOS', W/2, 125);
+  ctx.fillStyle = dim;
+  ctx.font = "30px 'Barlow', sans-serif";
+  ctx.fillText(new Date().toLocaleDateString('es-AR', {weekday:'long', day:'numeric', month:'long'}), W/2, 170);
+
+  options.forEach((o, i)=>{
+    const top = 200 + i*optH;
+    ctx.fillStyle = 'rgba(8,28,21,0.55)';
+    ctx.fillRect(PAD, top, W-PAD*2, optH-20);
+    ctx.textAlign = 'left';
+    ctx.fillStyle = gold;
+    ctx.font = "48px 'Bebas Neue', sans-serif";
+    ctx.fillText(options.length > 1 ? `OPCIÓN ${i+1}` : 'EQUIPOS', PAD+24, top+58);
+    [[shirtLabels.A, o.teamA], [shirtLabels.B, o.teamB]].forEach(([label, team], k)=>{
+      const x = PAD + 24 + k*(colW + 60);
+      ctx.fillStyle = chalk;
+      ctx.font = "40px 'Bebas Neue', sans-serif";
+      ctx.fillText(label, x, top+118);
+      ctx.font = "34px 'Barlow', sans-serif";
+      team.forEach((p, r)=>{
+        ctx.fillStyle = gkIds.has(p.id) ? gold : chalk;
+        ctx.fillText(`${gkIds.has(p.id) ? '🧤 ' : '• '}${p.name}`, x, top+118+ROW*(r+1), colW-10);
+      });
+    });
+    ctx.textAlign = 'center';
+    ctx.fillStyle = gold;
+    ctx.font = "44px 'Bebas Neue', sans-serif";
+    ctx.fillText('VS', W/2, top+118);
+  });
+  return c;
+}
+
+async function shareTeamsImage(options, shirtLabels, gkIds){
+  if(document.fonts && document.fonts.ready) await document.fonts.ready;
+  const canvas = drawTeamsImage(options, shirtLabels, gkIds);
+  const blob = await new Promise(res=>canvas.toBlob(res, 'image/png'));
+  const file = new File([blob], 'equipos.png', {type:'image/png'});
+  if(navigator.canShare && navigator.canShare({files:[file]})){
+    try{ await navigator.share({files:[file]}); return; }
+    catch(e){ if(e.name === 'AbortError') return; }
+  }
+  // Sin soporte para compartir archivos (p.ej. PC): se descarga la imagen.
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'equipos.png';
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+}
+
 function renderResults(pool, picks, size, shirtLabels, gkIds){
   const panel = document.getElementById('resultsPanel');
   if(picks.length === 0){
@@ -1691,7 +1765,8 @@ function renderResults(pool, picks, size, shirtLabels, gkIds){
     return {teamA, teamB, size, gkIds: Array.from(gkIds)};
   });
   let html = `<div class="panel"><h2><span class="num">5</span> Opciones de equipos<span class="chevron">▾</span></h2><div class="panel-body">
-    <p style="color:var(--chalk-dim);font-size:13px;margin:0 0 14px;">🎽 Sorteo de camiseta: <strong style="color:var(--gold);">${shirtLabels.A}</strong> vs <strong style="color:var(--gold);">${shirtLabels.B}</strong></p>`;
+    <p style="color:var(--chalk-dim);font-size:13px;margin:0 0 14px;">🎽 Sorteo de camiseta: <strong style="color:var(--gold);">${shirtLabels.A}</strong> vs <strong style="color:var(--gold);">${shirtLabels.B}</strong></p>
+    <button class="btn-record" id="shareImageBtn" style="margin:0 0 14px;">🖼️ Compartir imagen con ${picks.length > 1 ? `las ${picks.length} opciones` : 'los equipos'}</button>`;
   picks.forEach((r, idx)=>{
     const teamA = [];
     const teamB = [];
@@ -1751,6 +1826,9 @@ function renderResults(pool, picks, size, shirtLabels, gkIds){
   panel.scrollIntoView({behavior:'smooth', block:'nearest'});
   panel.querySelectorAll('.panel').forEach(attachPanelToggle);
 
+  document.getElementById('shareImageBtn').addEventListener('click', ()=>{
+    shareTeamsImage(lastPicksData, shirtLabels, gkIds).catch(err=>console.error(err));
+  });
   panel.querySelectorAll('[data-share-idx]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       const data = lastPicksData[btn.getAttribute('data-share-idx')];
