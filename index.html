@@ -547,6 +547,7 @@
   <div class="panel collapsed">
     <h2><span class="num">6</span> Historial y ranking<span class="chevron">▾</span></h2>
     <div class="panel-body">
+    <div id="highlightsBox"></div>
     <div id="cardsGrid" class="cards-grid"></div>
     <div id="rankingBox"></div>
 
@@ -2138,6 +2139,28 @@ function computePlayerAggregates(){
     streaks[id] = streak;
   });
 
+  // mejor racha histórica: máximo de victorias seguidas (un empate o una
+  // derrota la corta), con las fechas en que la hizo.
+  const bestStreaks = {};
+  Object.keys(stats).forEach(id=>{
+    let best = {count:0, from:null, to:null};
+    let cur = 0, curFrom = null;
+    sortedMatches.forEach(m=>{
+      let result = null;
+      if((m.teamAIds||[]).includes(id)) result = m.winner==='A' ? 'win' : 'other';
+      else if((m.teamBIds||[]).includes(id)) result = m.winner==='B' ? 'win' : 'other';
+      else return;
+      if(result === 'win'){
+        if(cur === 0) curFrom = m.date;
+        cur++;
+        if(cur > best.count) best = {count:cur, from:curFrom, to:m.date};
+      } else {
+        cur = 0;
+      }
+    });
+    bestStreaks[id] = best;
+  });
+
   const maxGoals = Math.max(0, ...Object.values(stats).map(s=>s.goals));
   const maxAssists = Math.max(0, ...Object.values(stats).map(s=>s.assists));
   const maxMvps = Math.max(0, ...Object.values(stats).map(s=>s.mvps));
@@ -2153,7 +2176,7 @@ function computePlayerAggregates(){
     if(maxMvps > 0 && s.mvps === maxMvps) badges.push({icon:'🏆', label:'Más MVPs'});
     if(s.pj >= 3 && s.pg === s.pj) badges.push({icon:'💯', label:'Invicto'});
     if(s.pj >= 10) badges.push({icon:'🎖️', label:'Veterano (10+ partidos)'});
-    result[id] = {...s, winrate, streak: streaks[id], badges};
+    result[id] = {...s, winrate, streak: streaks[id], bestStreak: bestStreaks[id], badges};
   });
   return result;
 }
@@ -2300,8 +2323,35 @@ function renderMatchEditor(){
   });
 }
 
+function renderHighlights(agg){
+  const box = document.getElementById('highlightsBox');
+  const ids = Object.keys(agg).filter(id=>players.some(p=>p.id===id));
+  const top = Math.max(0, ...ids.map(id=>agg[id].bestStreak.count));
+  if(top === 0){
+    box.innerHTML = '';
+    return;
+  }
+  const fmt = d => new Date(d).toLocaleDateString('es-AR', {day:'2-digit', month:'2-digit', year:'numeric'});
+  const holders = ids.filter(id=>agg[id].bestStreak.count === top).map(id=>{
+    const b = agg[id].bestStreak;
+    const range = fmt(b.from) === fmt(b.to) ? fmt(b.from) : `${fmt(b.from)} al ${fmt(b.to)}`;
+    return `<li><strong>${escapeHtml(playerName(id))}</strong> <span style="color:var(--chalk-dim);font-size:12px;">(${range})</span></li>`;
+  }).join('');
+  box.innerHTML = `
+    <div class="setup-box" style="border-style:solid;margin-bottom:14px;">
+      <strong style="color:var(--gold);">⭐ Destacados</strong>
+      <div style="margin-top:10px;">
+        <div style="font-size:13px;color:var(--chalk-dim);">🔥 Mejor racha histórica</div>
+        <div style="font-size:22px;color:var(--gold);font-family:'Bebas Neue',sans-serif;letter-spacing:1px;">${top} victoria${top===1?'':'s'} seguida${top===1?'':'s'}</div>
+        <ul style="margin:4px 0 0;padding-left:18px;">${holders}</ul>
+      </div>
+    </div>
+  `;
+}
+
 function renderHistoryAndRanking(){
   const agg = computePlayerAggregates();
+  renderHighlights(agg);
 
   const cardsGrid = document.getElementById('cardsGrid');
   const activeIds = players.map(p=>p.id);
