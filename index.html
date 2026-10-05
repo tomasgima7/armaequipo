@@ -233,6 +233,13 @@
   .history-item .hleft{display:flex;flex-direction:column;gap:2px;}
   .history-item .hdate{font-size:12px;color:var(--chalk-dim);}
   .history-item .hscore{font-family:'JetBrains Mono',monospace;color:var(--gold);font-weight:700;}
+  .history-item .hactions{display:flex;gap:6px;}
+  .match-editor{flex-basis:100%;border-top:1px dashed var(--pitch-line);padding-top:10px;margin-top:4px;}
+  .match-editor input[type=number]{
+    background:var(--pitch-dark);border:1px solid var(--card-border);color:var(--chalk);
+    padding:6px;border-radius:6px;font-family:'JetBrains Mono',monospace;text-align:center;
+  }
+  .match-editor .rank-table input[type=number]{width:50px;}
 
   /* Avatares */
   .avatar-sm, .avatar-thumb{
@@ -2151,6 +2158,148 @@ function computePlayerAggregates(){
   return result;
 }
 
+// ---- Ver / editar un partido ya cargado ----
+// Se edita una copia (matchDraft); recién al tocar "Guardar cambios" se pisa
+// el partido en matches y se recalcula todo (Elo, ranking, rachas).
+let editingMatchId = null;
+let matchDraft = null;
+
+function renderMatchEditor(){
+  const box = document.getElementById('matchEditor');
+  if(!box || !matchDraft) return;
+  const d = matchDraft;
+  const fecha = new Date(d.date).toLocaleDateString('es-AR', {day:'2-digit',month:'2-digit',year:'numeric'});
+  // Jugadores del plantel + los que estaban en el partido y ya se borraron.
+  const known = players.map(p=>({id:p.id, name:p.name}));
+  [...d.teamAIds, ...d.teamBIds].forEach(id=>{
+    if(!known.some(k=>k.id===id)) known.push({id, name:'(jugador eliminado)'});
+  });
+  const nameOf = id => (known.find(k=>k.id===id) || {name:id}).name;
+  const teamPick = (team) => known.map(k=>{
+    const ids = team === 'A' ? d.teamAIds : d.teamBIds;
+    return `<label><input type="checkbox" data-me-team="${team}" value="${k.id}" ${ids.includes(k.id) ? 'checked' : ''}><span>${escapeHtml(k.name)}</span></label>`;
+  }).join('');
+  const inMatch = [...d.teamAIds, ...d.teamBIds];
+  const rows = inMatch.map(id=>{
+    const st = d.playerStats[id] || {goals:0, assists:0};
+    return `<tr>
+      <td>${escapeHtml(nameOf(id))} <span style="color:var(--chalk-dim);font-size:11px;">(${d.teamAIds.includes(id) ? 'A' : 'B'})</span></td>
+      <td style="text-align:center;"><input type="checkbox" data-me-gk="${id}" ${d.gkIds.includes(id) ? 'checked' : ''}></td>
+      <td><input type="number" min="0" data-me-goals="${id}" value="${st.goals||0}"></td>
+      <td><input type="number" min="0" data-me-assists="${id}" value="${st.assists||0}"></td>
+    </tr>`;
+  }).join('');
+  box.innerHTML = `
+    <div class="sync-row" style="margin-bottom:10px;">
+      <div class="field"><label>Fecha</label><input type="text" id="meDate" value="${fecha}" placeholder="dd/mm/aaaa"></div>
+      <div class="field"><label>Goles Equipo A</label><input type="number" min="0" id="meScoreA" value="${d.scoreA}" style="width:64px;"></div>
+      <div class="field"><label>Goles Equipo B</label><input type="number" min="0" id="meScoreB" value="${d.scoreB}" style="width:64px;"></div>
+    </div>
+    <div class="teams" style="margin-bottom:10px;">
+      <div class="team"><div class="team-head"><span class="tname">EQUIPO A</span></div><div class="group-pick" style="margin:0;">${teamPick('A')}</div></div>
+      <div class="vs">VS</div>
+      <div class="team"><div class="team-head"><span class="tname">EQUIPO B</span></div><div class="group-pick" style="margin:0;">${teamPick('B')}</div></div>
+    </div>
+    ${inMatch.length ? `
+    <table class="rank-table">
+      <thead><tr><th>Jugador</th><th>🧤 Atajó</th><th>Goles</th><th>Asist.</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="field" style="margin-bottom:10px;">
+      <label for="meMvp">MVP del partido</label>
+      <select id="meMvp">
+        <option value="">(sin elegir)</option>
+        ${inMatch.map(id=>`<option value="${id}" ${d.mvpId===id ? 'selected' : ''}>${escapeHtml(nameOf(id))}</option>`).join('')}
+      </select>
+    </div>` : ''}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn-primary" id="meSave">Guardar cambios</button>
+      <button class="btn-ghost" id="meCancel">Cancelar</button>
+    </div>
+    <div class="sync-status off" id="meStatus"></div>
+  `;
+
+  // Guarda lo tipeado en el borrador antes de re-dibujar el editor.
+  function readInputs(){
+    d.scoreA = parseInt(box.querySelector('#meScoreA').value, 10) || 0;
+    d.scoreB = parseInt(box.querySelector('#meScoreB').value, 10) || 0;
+    d._dateText = box.querySelector('#meDate').value.trim();
+    const stats = {};
+    box.querySelectorAll('[data-me-goals]').forEach(inp=>{
+      const id = inp.getAttribute('data-me-goals');
+      const goals = parseInt(inp.value, 10) || 0;
+      const assists = parseInt(box.querySelector(`[data-me-assists="${id}"]`).value, 10) || 0;
+      if(goals > 0 || assists > 0) stats[id] = {goals, assists};
+    });
+    d.playerStats = stats;
+    d.gkIds = Array.from(box.querySelectorAll('[data-me-gk]:checked')).map(c=>c.getAttribute('data-me-gk'));
+    const mvp = box.querySelector('#meMvp');
+    d.mvpId = mvp && mvp.value ? mvp.value : null;
+  }
+
+  box.querySelectorAll('[data-me-team]').forEach(cb=>{
+    cb.addEventListener('change', ()=>{
+      readInputs();
+      const id = cb.value, team = cb.getAttribute('data-me-team');
+      const key = team === 'A' ? 'teamAIds' : 'teamBIds';
+      const other = team === 'A' ? 'teamBIds' : 'teamAIds';
+      if(cb.checked){
+        if(!d[key].includes(id)) d[key].push(id);
+        d[other] = d[other].filter(x=>x!==id); // no puede estar en los dos equipos
+      } else {
+        d[key] = d[key].filter(x=>x!==id);
+        delete d.playerStats[id];
+        d.gkIds = d.gkIds.filter(x=>x!==id);
+        if(d.mvpId === id) d.mvpId = null;
+      }
+      const keepDate = d._dateText;
+      renderMatchEditor();
+      box.querySelector('#meDate').value = keepDate;
+    });
+  });
+
+  box.querySelector('#meCancel').addEventListener('click', ()=>{
+    editingMatchId = null; matchDraft = null;
+    renderHistoryAndRanking();
+  });
+
+  box.querySelector('#meSave').addEventListener('click', ()=>{
+    readInputs();
+    const status = box.querySelector('#meStatus');
+    if(d.teamAIds.length === 0 || d.teamBIds.length === 0){
+      status.textContent = 'Marcá al menos un jugador en cada equipo.';
+      status.className = 'sync-status error';
+      return;
+    }
+    let isoDate = d.date;
+    const parts = (d._dateText || '').split('/');
+    if(parts.length === 3){
+      const dt = new Date(parseInt(parts[2],10), parseInt(parts[1],10)-1, parseInt(parts[0],10));
+      if(!isNaN(dt.getTime())) isoDate = dt.toISOString();
+    } else if(d._dateText){
+      status.textContent = 'La fecha tiene que ser dd/mm/aaaa.';
+      status.className = 'sync-status error';
+      return;
+    }
+    const idx = matches.findIndex(x=>x.id===d.id);
+    if(idx === -1) return;
+    const winner = d.scoreA > d.scoreB ? 'A' : (d.scoreB > d.scoreA ? 'B' : 'empate');
+    matches[idx] = {
+      ...matches[idx],
+      date: isoDate,
+      teamAIds: d.teamAIds.slice(),
+      teamBIds: d.teamBIds.slice(),
+      gkIds: d.gkIds.slice(),
+      scoreA: d.scoreA, scoreB: d.scoreB, winner,
+      playerStats: d.playerStats,
+      mvpId: d.mvpId
+    };
+    editingMatchId = null; matchDraft = null;
+    savePlayers();
+    renderAll();
+  });
+}
+
 function renderHistoryAndRanking(){
   const agg = computePlayerAggregates();
 
@@ -2220,11 +2369,31 @@ function renderHistoryAndRanking(){
           <span>${winnerText}${mvpText}</span>
         </div>
         <span class="hscore">${m.scoreA} - ${m.scoreB}</span>
-        <button class="btn-ghost" data-delete-match="${m.id}">Borrar</button>
+        <div class="hactions">
+          <button class="btn-ghost" data-edit-match="${m.id}">${editingMatchId === m.id ? 'Cerrar' : 'Ver / Editar'}</button>
+          <button class="btn-ghost" data-delete-match="${m.id}">Borrar</button>
+        </div>
+        ${editingMatchId === m.id ? '<div class="match-editor" id="matchEditor"></div>' : ''}
       </div>
     `;
   });
   historyList.innerHTML = h;
+  if(editingMatchId && matchDraft) renderMatchEditor();
+  historyList.querySelectorAll('[data-edit-match]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const id = btn.getAttribute('data-edit-match');
+      if(editingMatchId === id){
+        editingMatchId = null; matchDraft = null;
+      } else {
+        const m = matches.find(x=>x.id===id);
+        editingMatchId = id;
+        matchDraft = JSON.parse(JSON.stringify({
+          ...m, gkIds: m.gkIds || [], playerStats: m.playerStats || {}, mvpId: m.mvpId || null
+        }));
+      }
+      renderHistoryAndRanking();
+    });
+  });
   historyList.querySelectorAll('[data-delete-match]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       const id = btn.getAttribute('data-delete-match');
