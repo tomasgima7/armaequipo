@@ -2175,7 +2175,7 @@ function computePlayerAggregates(){
     if(maxAssists > 0 && s.assists === maxAssists) badges.push({icon:'🎯', label:'Máximo asistidor'});
     if(maxMvps > 0 && s.mvps === maxMvps) badges.push({icon:'🏆', label:'Más MVPs'});
     if(s.pj >= 3 && s.pg === s.pj) badges.push({icon:'💯', label:'Invicto'});
-    if(s.pj >= 10) badges.push({icon:'🎖️', label:'Veterano (10+ partidos)'});
+    if(s.pj >= 20) badges.push({icon:'🎖️', label:'Veterano (20+ partidos)'});
     result[id] = {...s, winrate, streak: streaks[id], bestStreak: bestStreaks[id], badges};
   });
   return result;
