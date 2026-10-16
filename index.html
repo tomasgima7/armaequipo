@@ -1840,20 +1840,22 @@ function shareText(data, shirtLabels, gkIds){
 }
 
 // Imagen tipo card con todas las opciones (solo nombres, sin puntajes).
+// Racha (🔥N) y logros del jugador, igual que en la app. Lo usan las imágenes para compartir.
+function playerExtras(p, agg){
+  const st = agg[p.id];
+  if(!st) return '';
+  const icons = [];
+  if(st.streak >= 2) icons.push(`🔥${st.streak}`);
+  (st.badges || []).forEach(b=>{ if(b.icon !== '🔥') icons.push(b.icon); });
+  return icons.length ? '  ' + icons.join(' ') : '';
+}
+
 function drawTeamsImage(options, shirtLabels, gkIds){
   const W = 1080, PAD = 56, ROW = 50, colW = (W - PAD*2 - 60) / 2;
   const maxRows = Math.max(...options.map(o=>Math.max(o.teamA.length, o.teamB.length)));
   const optH = 70 + 60 + 44 + maxRows*ROW + 40;
   const agg = computePlayerAggregates();
-  // Racha (🔥N) y logros del jugador, igual que en la app.
-  const extras = p=>{
-    const st = agg[p.id];
-    if(!st) return '';
-    const icons = [];
-    if(st.streak >= 2) icons.push(`🔥${st.streak}`);
-    (st.badges || []).forEach(b=>{ if(b.icon !== '🔥') icons.push(b.icon); });
-    return icons.length ? '  ' + icons.join(' ') : '';
-  };
+  const extras = p=>playerExtras(p, agg);
   const H = 200 + options.length*optH + 40;
   const c = document.createElement('canvas');
   c.width = W; c.height = H;
@@ -1993,7 +1995,7 @@ function pitchSlots(team, gkIds, bottom){
   return slots;
 }
 
-function pitchHtml(teamA, teamB, shirtLabels, gkIds, chemByPair){
+function pitchHtml(teamA, teamB, shirtLabels, gkIds, chemByPair, idx){
   const slotsA = pitchSlots(teamA, gkIds, true);
   const slotsB = pitchSlots(teamB, gkIds, false);
   let lines = '';
@@ -2025,7 +2027,7 @@ function pitchHtml(teamA, teamB, shirtLabels, gkIds, chemByPair){
       <button type="button" class="btn-ghost" data-pitch-reset style="color:var(--gold);flex-shrink:0;">↺ Formación</button>
     </div>
     <div class="pitch-label">${escapeHtml(shirtLabels.B)}</div>
-    <div class="pitch ${compact}" data-label-a="${escapeHtml(shirtLabels.A)}" data-label-b="${escapeHtml(shirtLabels.B)}">
+    <div class="pitch ${compact}" data-label-a="${escapeHtml(shirtLabels.A)}" data-label-b="${escapeHtml(shirtLabels.B)}" data-idx="${idx}">
       <svg viewBox="0 0 100 140" aria-hidden="true">
         <g fill="none" stroke="rgba(241,250,238,0.35)" stroke-width="0.5">
           <rect x="3" y="3" width="94" height="134"/>
@@ -2053,8 +2055,10 @@ function pitchHtml(teamA, teamB, shirtLabels, gkIds, chemByPair){
 // ---- Imagen de la cancha para compartir ----
 // Se dibuja desde la cancha tal como está en pantalla (con los jugadores
 // movidos), así que la imagen respeta lo que se acomodó a mano.
-function drawPitchImage(pitch){
-  const W = 1080, PAD = 40, PW = W - PAD*2, PH = PW * 1.4;
+// data: la opción de lastPicksData (equipos, arqueros y promedios) para la lista del costado.
+function drawPitchImage(pitch, data){
+  const W = 1600, PAD = 40, PW = 820, PH = PW * 1.4;
+  const SIDE_X = PAD + PW + 50, SIDE_W = W - SIDE_X - PAD, PCX = PAD + PW/2;
   const HEAD = 180, LBL = 60, LEG = 90;
   const H = HEAD + LBL + PH + LBL + LEG;
   const c = document.createElement('canvas');
@@ -2086,9 +2090,9 @@ function drawPitchImage(pitch){
 
   ctx.fillStyle = chalk;
   ctx.font = "40px 'Bebas Neue', sans-serif";
-  ctx.fillText(pitch.dataset.labelB, W/2, HEAD + 42);
+  ctx.fillText(pitch.dataset.labelB, PCX, HEAD + 42);
   const top = HEAD + LBL;
-  ctx.fillText(pitch.dataset.labelA, W/2, top + PH + 44);
+  ctx.fillText(pitch.dataset.labelA, PCX, top + PH + 44);
 
   // Césped a rayas, marcas y líneas de química (en unidades del viewBox 100x140).
   const sx = PW / 100;
@@ -2174,6 +2178,36 @@ function drawPitchImage(pitch){
     ctx.fillText(nameEl.textContent, cx, at(nameEl), w - 8);
   });
 
+  // Lista de cada equipo al costado: el de arriba de la cancha arriba y el de abajo abajo.
+  if(data){
+    const agg = computePlayerAggregates();
+    const gkSet = new Set(data.gkIds || []);
+    const BOX_H = PH/2 - 15;
+    [[pitch.dataset.labelB, data.teamB, data.avgB, top], [pitch.dataset.labelA, data.teamA, data.avgA, top + PH/2 + 15]].forEach(([label, team, avg, y0])=>{
+      ctx.fillStyle = 'rgba(23,63,48,0.75)';
+      rr(SIDE_X, y0, SIDE_W, BOX_H, 18); ctx.fill();
+      ctx.strokeStyle = 'rgba(233,196,106,0.25)'; ctx.lineWidth = 2; ctx.stroke();
+      // Muestra de la camiseta (clara u oscura) al lado del nombre del equipo.
+      rr(SIDE_X + 28, y0 + 30, 40, 40, 9);
+      ctx.fillStyle = label.includes('CLARA') ? '#F4F4EC' : '#081C15'; ctx.fill();
+      ctx.strokeStyle = gold; ctx.lineWidth = 3; ctx.stroke();
+      ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+      ctx.fillStyle = chalk;
+      ctx.font = "48px 'Bebas Neue', sans-serif";
+      ctx.fillText(label, SIDE_X + 84, y0 + 67, SIDE_W - 110);
+      ctx.fillStyle = gold;
+      ctx.font = "28px 'Barlow', sans-serif";
+      ctx.fillText(`Promedio ${avg}`, SIDE_X + 28, y0 + 112);
+      const players = [...team].sort((a,b)=> (gkSet.has(b.id) ? 1 : 0) - (gkSet.has(a.id) ? 1 : 0));
+      const rowH = Math.min(52, (BOX_H - 150) / Math.max(1, players.length));
+      ctx.font = `${Math.round(Math.min(32, rowH * 0.66))}px 'Barlow', sans-serif`;
+      players.forEach((p, i)=>{
+        ctx.fillStyle = gkSet.has(p.id) ? gold : chalk;
+        ctx.fillText(`${gkSet.has(p.id) ? '🧤 ' : '• '}${displayName(p)}${playerExtras(p, agg)}`, SIDE_X + 28, y0 + 150 + rowH * (i + 0.75), SIDE_W - 56);
+      });
+    });
+  }
+
   // Leyenda de química
   ctx.textBaseline = 'middle';
   ctx.font = "24px 'Barlow', sans-serif";
@@ -2200,7 +2234,7 @@ function drawPitchImage(pitch){
 
 async function sharePitchImage(pitch, statusEl){
   if(document.fonts && document.fonts.ready) await document.fonts.ready;
-  await shareCanvas(drawPitchImage(pitch), statusEl, 'cancha.png');
+  await shareCanvas(drawPitchImage(pitch, lastPicksData[+pitch.dataset.idx]), statusEl, 'cancha.png');
 }
 
 // ---- Mover jugadores en la cancha (arrastrar y soltar) ----
@@ -2329,7 +2363,7 @@ function renderResults(pool, picks, size, shirtLabels, gkIds){
           </div>
         </div>
         <div class="view-cancha" style="margin-bottom:14px;${resultsView==='cancha' ? '' : 'display:none;'}">
-          ${pitchHtml(teamA, teamB, shirtLabels, gkIds, chemByPair)}
+          ${pitchHtml(teamA, teamB, shirtLabels, gkIds, chemByPair, idx)}
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button class="btn-record" data-share-idx="${idx}">📲 Compartir por WhatsApp</button>
