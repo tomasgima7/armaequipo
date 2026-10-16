@@ -562,6 +562,7 @@
     <h2><span class="num">6</span> Historial y ranking<span class="chevron">▾</span></h2>
     <div class="panel-body">
     <div id="highlightsBox"></div>
+    <div id="chemistryBox"></div>
     <div id="cardsGrid" class="cards-grid"></div>
     <div id="rankingBox"></div>
 
@@ -2482,6 +2483,94 @@ function renderMatchEditor(){
   });
 }
 
+// ---- Química entre jugadores ----
+// Por cada dupla del plantel: partidos jugados en el mismo equipo y cuántos
+// ganaron juntos. Los fantasmas no cuentan.
+const CHEMISTRY_MIN_PJ = 2; // partidos juntos mínimos para entrar en los rankings de duplas
+let chemistryPlayerId = '';
+
+function computeChemistry(){
+  const real = new Set(realPlayers().map(p=>p.id));
+  const pairs = {};
+  matches.forEach(m=>{
+    if(!m.winner) return;
+    [['A', m.teamAIds || []], ['B', m.teamBIds || []]].forEach(([side, ids])=>{
+      const team = ids.filter(id=>real.has(id));
+      const won = m.winner === side;
+      for(let i=0; i<team.length; i++){
+        for(let j=i+1; j<team.length; j++){
+          const [a, b] = [team[i], team[j]].sort();
+          const key = a + '|' + b;
+          if(!pairs[key]) pairs[key] = {a, b, pj:0, pg:0};
+          pairs[key].pj++;
+          if(won) pairs[key].pg++;
+        }
+      }
+    });
+  });
+  return Object.values(pairs).map(x=>({...x, winrate: x.pg / x.pj * 100}));
+}
+
+function chemistryRow(x, names){
+  return `<tr><td>${names}</td><td class="num">${x.pj}</td><td class="num">${x.pg}</td><td class="num">${x.winrate.toFixed(0)}%</td></tr>`;
+}
+
+function chemistryTable(rows){
+  return `<table class="rank-table"><thead><tr><th>Dupla</th><th>PJ juntos</th><th>PG juntos</th><th>%G</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function renderChemistry(){
+  const box = document.getElementById('chemistryBox');
+  const pairs = computeChemistry();
+  if(pairs.length === 0){
+    box.innerHTML = '';
+    return;
+  }
+  const pairName = x => `${escapeHtml(playerName(x.a))} + ${escapeHtml(playerName(x.b))}`;
+  const eligible = pairs.filter(x=>x.pj >= CHEMISTRY_MIN_PJ);
+  // Mejor química: más %G y, a igual %, más partidos juntos.
+  const best = [...eligible].sort((x,y)=> y.winrate - x.winrate || y.pj - x.pj).slice(0, 5);
+  const worst = [...eligible].sort((x,y)=> x.winrate - y.winrate || y.pj - x.pj)
+    .filter(x=>!best.includes(x)).slice(0, 3);
+
+  if(chemistryPlayerId && !realPlayers().some(p=>p.id===chemistryPlayerId)) chemistryPlayerId = '';
+  let partnersHtml = '';
+  if(chemistryPlayerId){
+    const mine = pairs
+      .filter(x=>x.a === chemistryPlayerId || x.b === chemistryPlayerId)
+      .sort((x,y)=> y.winrate - x.winrate || y.pj - x.pj);
+    partnersHtml = mine.length
+      ? chemistryTable(mine.map(x=>chemistryRow(x, escapeHtml(playerName(x.a === chemistryPlayerId ? x.b : x.a)))).join('')).replace('<th>Dupla</th>', '<th>Compañero</th>')
+      : '<p style="color:var(--chalk-dim);font-size:13px;">Todavía no jugó en el mismo equipo con nadie del plantel.</p>';
+  }
+
+  box.innerHTML = `
+    <div class="setup-box" style="border-style:solid;margin-bottom:14px;">
+      <strong style="color:var(--gold);">🤝 Química</strong>
+      <p style="margin:6px 0 10px;color:var(--chalk-dim);font-size:13px;">Partidos jugados y ganados en el mismo equipo. En los rankings de duplas entran las que jugaron ${CHEMISTRY_MIN_PJ}+ partidos juntas.</p>
+      ${eligible.length ? `
+        <div style="font-size:13px;color:var(--chalk-dim);margin-bottom:4px;">💚 Mejores duplas</div>
+        ${chemistryTable(best.map(x=>chemistryRow(x, pairName(x))).join(''))}
+        ${worst.length ? `
+        <div style="font-size:13px;color:var(--chalk-dim);margin:10px 0 4px;">💔 Peores duplas</div>
+        ${chemistryTable(worst.map(x=>chemistryRow(x, pairName(x))).join(''))}` : ''}
+      ` : `<p style="color:var(--chalk-dim);font-size:13px;">Ninguna dupla jugó ${CHEMISTRY_MIN_PJ} partidos juntos todavía.</p>`}
+      <div class="field" style="margin:12px 0 8px;">
+        <label for="chemistryPlayer">Ver la química de</label>
+        <select id="chemistryPlayer">
+          <option value="">(elegí un jugador)</option>
+          ${realPlayers().map(p=>`<option value="${p.id}" ${p.id===chemistryPlayerId ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}
+        </select>
+      </div>
+      ${partnersHtml}
+    </div>
+  `;
+  box.querySelector('#chemistryPlayer').addEventListener('change', (e)=>{
+    chemistryPlayerId = e.target.value;
+    renderChemistry();
+  });
+}
+
 function renderHighlights(agg){
   const box = document.getElementById('highlightsBox');
   const ids = Object.keys(agg).filter(id=>players.some(p=>p.id===id && !p.ghost));
@@ -2511,6 +2600,7 @@ function renderHighlights(agg){
 function renderHistoryAndRanking(){
   const agg = computePlayerAggregates();
   renderHighlights(agg);
+  renderChemistry();
 
   const cardsGrid = document.getElementById('cardsGrid');
   const activeIds = realPlayers().map(p=>p.id);
