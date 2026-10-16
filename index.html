@@ -447,7 +447,7 @@
     text-align:center;font-family:'Bebas Neue',sans-serif;
     letter-spacing:1px;font-size:15px;color:var(--chalk-dim);margin:4px 0;
   }
-  .chem-legend{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;font-size:12px;color:var(--chalk-dim);margin-top:10px;}
+  .chem-legend{display:flex;flex-wrap:wrap;gap:4px 12px;justify-content:center;font-size:11px;color:var(--chalk-dim);margin-top:8px;opacity:0.85;}
   .chem-legend i{display:inline-block;width:18px;height:3px;border-radius:2px;vertical-align:middle;margin-right:5px;}
   @media (max-width:600px){
     .teams{grid-template-columns:1fr;}
@@ -1952,10 +1952,15 @@ async function shareTeamsImage(options, shirtLabels, gkIds, statusEl){
 const FORMATIONS = {1:[1],2:[2],3:[2,1],4:[2,2],5:[2,2,1],6:[2,3,1],7:[3,3,1],8:[3,3,2],9:[3,4,2],10:[4,4,2],11:[4,4,3]};
 let resultsView = 'lista';
 
-function chemistryColor(winrate){
-  if(winrate >= 60) return '#57CC99';
-  if(winrate >= 40) return '#E9C46A';
-  return '#E85D4C';
+// Solo se dibuja la química positiva (ganan más de la mitad de los partidos
+// juntos): cuanto más ganan, más intenso y grueso es el verde.
+const CHEMISTRY_TIERS = [
+  {min:80, color:'#3BF08A', width:1.5, label:'fuerte (80%+)'},
+  {min:65, color:'#52C98A', width:1.0, label:'buena (65–79%)'},
+  {min:50.01, color:'#A7D8BC', width:0.6, label:'leve (51–64%)'}
+];
+function chemistryTier(winrate){
+  return CHEMISTRY_TIERS.find(t=>winrate >= t.min) || null;
 }
 
 // Posiciones en un viewBox de 100x140: el equipo A abajo, el B arriba (espejado).
@@ -1988,8 +1993,9 @@ function pitchHtml(teamA, teamB, shirtLabels, gkIds, chemByPair){
       for(let j=i+1; j<slots.length; j++){
         const key = [slots[i].p.id, slots[j].p.id].sort().join('|');
         const c = chemByPair[key];
-        if(!c) continue;
-        lines += `<line x1="${slots[i].x}" y1="${slots[i].y}" x2="${slots[j].x}" y2="${slots[j].y}" stroke="${chemistryColor(c.winrate)}" stroke-width="0.9" stroke-linecap="round" opacity="0.9"><title>${escapeHtml(playerName(c.a))} + ${escapeHtml(playerName(c.b))}: ${c.pg}/${c.pj} ganados juntos</title></line>`;
+        const tier = c && chemistryTier(c.winrate);
+        if(!tier) continue;
+        lines += `<line x1="${slots[i].x}" y1="${slots[i].y}" x2="${slots[j].x}" y2="${slots[j].y}" stroke="${tier.color}" stroke-width="${tier.width}" stroke-linecap="round" opacity="0.95"><title>${escapeHtml(playerName(c.a))} + ${escapeHtml(playerName(c.b))}: ${c.pg}/${c.pj} ganados juntos</title></line>`;
       }
     }
   });
@@ -2018,10 +2024,8 @@ function pitchHtml(teamA, teamB, shirtLabels, gkIds, chemByPair){
     </div>
     <div class="pitch-label">${escapeHtml(shirtLabels.A)}</div>
     <div class="chem-legend">
-      <span>Química (${CHEMISTRY_MIN_PJ}+ partidos juntos):</span>
-      <span><i style="background:#57CC99"></i>gana 60%+</span>
-      <span><i style="background:#E9C46A"></i>40–59%</span>
-      <span><i style="background:#E85D4C"></i>menos de 40%</span>
+      <span>Química (${CHEMISTRY_MIN_PJ}+ partidos juntos, % ganados):</span>
+      ${CHEMISTRY_TIERS.map(t=>`<span><i style="background:${t.color};height:${Math.max(2, Math.round(t.width * 2.5))}px"></i>${t.label}</span>`).join('')}
     </div>`;
 }
 
