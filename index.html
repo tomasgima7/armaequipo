@@ -439,6 +439,10 @@
   .pitch-card.light .pc-pos{color:#9A6B00;}
   .pitch-card .avatar-sm{width:6.5cqw;height:6.5cqw;margin:0.4cqw auto;font-size:3cqw;border-width:1px;}
   .pitch-card .pc-name{font-size:2.3cqw;line-height:1.2;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .pitch-card{cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;}
+  .pitch-card.dragging{cursor:grabbing;z-index:5;box-shadow:0 8px 18px rgba(0,0,0,0.6);transform:translate(-50%,-50%) scale(1.08);}
+  .pitch-card img{pointer-events:none;}
+  .pitch-tools{display:flex;justify-content:space-between;align-items:center;gap:8px;max-width:520px;margin:0 auto 6px;font-size:12px;color:var(--chalk-dim);}
   .pitch.compact .pitch-card{width:12cqw;padding:0.5cqw 0.4cqw 0.7cqw;}
   .pitch.compact .pitch-card .pc-pos{font-size:2.1cqw;}
   .pitch.compact .pitch-card .avatar-sm{width:5cqw;height:5cqw;font-size:2.4cqw;}
@@ -1995,18 +1999,26 @@ function pitchHtml(teamA, teamB, shirtLabels, gkIds, chemByPair){
         const c = chemByPair[key];
         const tier = c && chemistryTier(c.winrate);
         if(!tier) continue;
-        lines += `<line x1="${slots[i].x}" y1="${slots[i].y}" x2="${slots[j].x}" y2="${slots[j].y}" stroke="${tier.color}" stroke-width="${tier.width}" stroke-linecap="round" opacity="0.95"><title>${escapeHtml(playerName(c.a))} + ${escapeHtml(playerName(c.b))}: ${c.pg}/${c.pj} ganados juntos</title></line>`;
+        lines += `<line data-a="${slots[i].p.id}" data-b="${slots[j].p.id}" x1="${slots[i].x}" y1="${slots[i].y}" x2="${slots[j].x}" y2="${slots[j].y}" stroke="${tier.color}" stroke-width="${tier.width}" stroke-linecap="round" opacity="0.95"><title>${escapeHtml(playerName(c.a))} + ${escapeHtml(playerName(c.b))}: ${c.pg}/${c.pj} ganados juntos</title></line>`;
       }
     }
   });
-  const card = (sl, label) => `
-    <div class="pitch-card ${label.includes('CLARA') ? 'light' : ''}" style="left:${sl.x}%;top:${sl.y / 140 * 100}%;">
-      <div class="pc-pos">${sl.pos === 'ARQ' ? '🧤 ARQ' : sl.pos}</div>
+  const card = (sl, label, team) => {
+    const posText = sl.pos === 'ARQ' ? '🧤 ARQ' : sl.pos;
+    return `
+    <div class="pitch-card ${label.includes('CLARA') ? 'light' : ''}" style="left:${sl.x}%;top:${sl.y / 140 * 100}%;"
+      data-pid="${sl.p.id}" data-team="${team}" data-x="${sl.x}" data-y="${sl.y}" data-x0="${sl.x}" data-y0="${sl.y}" data-pos0="${posText}" ${sl.pos === 'ARQ' ? 'data-gk="1"' : ''}>
+      <div class="pc-pos">${posText}</div>
       ${avatarHtml(sl.p, 'avatar-sm')}
       <div class="pc-name" title="${escapeHtml(displayName(sl.p))}">${escapeHtml(displayName(sl.p))}</div>
     </div>`;
+  };
   const compact = Math.max(teamA.length, teamB.length) >= 8 ? 'compact' : '';
   return `
+    <div class="pitch-tools">
+      <span>✋ Arrastrá a los jugadores. Soltalo sobre un compañero para intercambiarlos.</span>
+      <button type="button" class="btn-ghost" data-pitch-reset style="color:var(--gold);flex-shrink:0;">↺ Formación</button>
+    </div>
     <div class="pitch-label">${escapeHtml(shirtLabels.B)}</div>
     <div class="pitch ${compact}">
       <svg viewBox="0 0 100 140" aria-hidden="true">
@@ -2019,14 +2031,89 @@ function pitchHtml(teamA, teamB, shirtLabels, gkIds, chemByPair){
         </g>
         ${lines}
       </svg>
-      ${slotsB.map(sl=>card(sl, shirtLabels.B)).join('')}
-      ${slotsA.map(sl=>card(sl, shirtLabels.A)).join('')}
+      ${slotsB.map(sl=>card(sl, shirtLabels.B, 'B')).join('')}
+      ${slotsA.map(sl=>card(sl, shirtLabels.A, 'A')).join('')}
     </div>
     <div class="pitch-label">${escapeHtml(shirtLabels.A)}</div>
     <div class="chem-legend">
       <span>Química (${CHEMISTRY_MIN_PJ}+ partidos juntos, % ganados):</span>
       ${CHEMISTRY_TIERS.map(t=>`<span><i style="background:${t.color};height:${Math.max(2, Math.round(t.width * 2.5))}px"></i>${t.label}</span>`).join('')}
     </div>`;
+}
+
+// ---- Mover jugadores en la cancha (arrastrar y soltar) ----
+// Funciona con mouse y con el dedo (pointer events). Cada jugador se mueve
+// dentro de la mitad de su equipo; si se suelta sobre un compañero, se
+// intercambian los lugares. Las líneas de química siguen a las cartas.
+function pitchPosLabel(y, team){
+  const d = team === 'A' ? 140 - y : y; // distancia al arco propio
+  if(d < 34) return 'DEF';
+  if(d < 52) return 'MED';
+  return 'DEL';
+}
+
+function setPitchCardPos(pitch, card, x, y){
+  card.dataset.x = x;
+  card.dataset.y = y;
+  card.style.left = x + '%';
+  card.style.top = (y / 140 * 100) + '%';
+  const id = card.dataset.pid;
+  pitch.querySelectorAll('line[data-a]').forEach(l=>{
+    if(l.dataset.a === id){ l.setAttribute('x1', x); l.setAttribute('y1', y); }
+    if(l.dataset.b === id){ l.setAttribute('x2', x); l.setAttribute('y2', y); }
+  });
+  if(!card.dataset.gk) card.querySelector('.pc-pos').textContent = pitchPosLabel(y, card.dataset.team);
+}
+
+function attachPitchDrag(pitch){
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  pitch.querySelectorAll('.pitch-card').forEach(card=>{
+    card.addEventListener('pointerdown', e=>{
+      if(e.button !== undefined && e.button !== 0) return;
+      e.preventDefault();
+      card.setPointerCapture(e.pointerId);
+      card.classList.add('dragging');
+      const rect = pitch.getBoundingClientRect();
+      const startX = +card.dataset.x, startY = +card.dataset.y;
+      const team = card.dataset.team;
+      const move = ev=>{
+        // Márgenes para que la carta no quede cortada contra el borde.
+        const x = clamp((ev.clientX - rect.left) / rect.width * 100, 8, 92);
+        const yRaw = (ev.clientY - rect.top) / rect.height * 140;
+        const y = team === 'A' ? clamp(yRaw, 76, 131) : clamp(yRaw, 9, 64);
+        setPitchCardPos(pitch, card, x, y);
+      };
+      const end = ()=>{
+        card.removeEventListener('pointermove', move);
+        card.removeEventListener('pointerup', end);
+        card.removeEventListener('pointercancel', end);
+        card.classList.remove('dragging');
+        // ¿Lo soltó encima de un compañero? Se intercambian los lugares.
+        const x = +card.dataset.x, y = +card.dataset.y;
+        let target = null, best = 9;
+        pitch.querySelectorAll(`.pitch-card[data-team="${team}"]`).forEach(other=>{
+          if(other === card) return;
+          const dist = Math.hypot(+other.dataset.x - x, +other.dataset.y - y);
+          if(dist < best){ best = dist; target = other; }
+        });
+        if(target){
+          const tx = +target.dataset.x, ty = +target.dataset.y;
+          setPitchCardPos(pitch, target, startX, startY);
+          setPitchCardPos(pitch, card, tx, ty);
+        }
+      };
+      card.addEventListener('pointermove', move);
+      card.addEventListener('pointerup', end);
+      card.addEventListener('pointercancel', end);
+    });
+  });
+}
+
+function resetPitch(pitch){
+  pitch.querySelectorAll('.pitch-card').forEach(card=>{
+    setPitchCardPos(pitch, card, +card.dataset.x0, +card.dataset.y0);
+    card.querySelector('.pc-pos').textContent = card.dataset.pos0;
+  });
 }
 
 function renderResults(pool, picks, size, shirtLabels, gkIds){
@@ -2114,6 +2201,10 @@ function renderResults(pool, picks, size, shirtLabels, gkIds){
   panel.innerHTML = html;
   panel.scrollIntoView({behavior:'smooth', block:'nearest'});
   panel.querySelectorAll('.panel').forEach(attachPanelToggle);
+  panel.querySelectorAll('.pitch').forEach(attachPitchDrag);
+  panel.querySelectorAll('[data-pitch-reset]').forEach(btn=>{
+    btn.addEventListener('click', ()=>resetPitch(btn.closest('.view-cancha').querySelector('.pitch')));
+  });
 
   panel.querySelectorAll('[data-view]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
