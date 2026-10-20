@@ -1822,8 +1822,18 @@ function generateOptions(){
 
 let lastPicksData = [];
 
+// Racha de derrotas: 🥶 desde 3 seguidas, 🧊 desde 6.
+function coldIcon(lossStreak){
+  if(lossStreak >= 6) return '🧊';
+  if(lossStreak >= 3) return '🥶';
+  return '';
+}
+
 function streakBadge(stat){
-  if(!stat || !stat.streak || stat.streak < 2) return '';
+  if(!stat) return '';
+  const cold = coldIcon(stat.lossStreak);
+  if(cold) return ` <span title="Racha de ${stat.lossStreak} derrotas" style="font-size:13px;">${cold}${stat.lossStreak}</span>`;
+  if(!stat.streak || stat.streak < 2) return '';
   return ` <span title="Racha de ${stat.streak} victorias" style="font-size:13px;">🔥${stat.streak}</span>`;
 }
 
@@ -1845,8 +1855,10 @@ function playerExtras(p, agg){
   const st = agg[p.id];
   if(!st) return '';
   const icons = [];
+  const cold = coldIcon(st.lossStreak);
   if(st.streak >= 2) icons.push(`🔥${st.streak}`);
-  (st.badges || []).forEach(b=>{ if(b.icon !== '🔥') icons.push(b.icon); });
+  else if(cold) icons.push(`${cold}${st.lossStreak}`);
+  (st.badges || []).forEach(b=>{ if(b.icon !== '🔥' && b.icon !== cold) icons.push(b.icon); });
   return icons.length ? '  ' + icons.join(' ') : '';
 }
 
@@ -2675,18 +2687,23 @@ function computePlayerAggregates(){
   // rachas: recorrer el historial cronológico de cada jugador
   const sortedMatches = [...matches].filter(m=>m.winner).sort((a,b)=> new Date(a.date)-new Date(b.date));
   const streaks = {};
+  const lossStreaks = {};
   Object.keys(stats).forEach(id=>{
-    let streak = 0;
+    let streak = 0, lossStreak = 0;
     for(let i=sortedMatches.length-1; i>=0; i--){
       const m = sortedMatches[i];
       let result = null;
       if((m.teamAIds||[]).includes(id)) result = m.winner==='A' ? 'win' : (m.winner==='empate' ? 'draw' : 'loss');
       else if((m.teamBIds||[]).includes(id)) result = m.winner==='B' ? 'win' : (m.winner==='empate' ? 'draw' : 'loss');
       else continue;
-      if(result === 'win') streak++;
+      // la racha (de victorias o de derrotas) arranca con el último partido
+      // y la corta cualquier otro resultado.
+      if(result === 'win' && lossStreak === 0) streak++;
+      else if(result === 'loss' && streak === 0) lossStreak++;
       else break;
     }
     streaks[id] = streak;
+    lossStreaks[id] = lossStreak;
   });
 
   // mejor racha histórica: máximo de victorias seguidas (un empate o una
@@ -2724,12 +2741,14 @@ function computePlayerAggregates(){
     const winrate = s.pj > 0 ? (s.pg / s.pj * 100) : 0;
     const badges = [];
     if(streaks[id] >= 3) badges.push({icon:'🔥', label:`Racha de ${streaks[id]} victorias`});
+    const cold = coldIcon(lossStreaks[id]);
+    if(cold) badges.push({icon:cold, label:`Racha de ${lossStreaks[id]} derrotas`});
     if(maxGoals > 0 && s.goals === maxGoals) badges.push({icon:'⚽', label:'Goleador del plantel'});
     if(maxAssists > 0 && s.assists === maxAssists) badges.push({icon:'🎯', label:'Máximo asistidor'});
     if(maxMvps > 0 && s.mvps === maxMvps) badges.push({icon:'🏆', label:'Más MVPs'});
     if(s.pj >= 3 && s.pg === s.pj) badges.push({icon:'💯', label:'Invicto'});
     if(s.pj >= 20) badges.push({icon:'🎖️', label:'Veterano (20+ partidos)'});
-    result[id] = {...s, winrate, streak: streaks[id], bestStreak: bestStreaks[id], badges};
+    result[id] = {...s, winrate, streak: streaks[id], lossStreak: lossStreaks[id], bestStreak: bestStreaks[id], badges};
   });
   return result;
 }
