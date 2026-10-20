@@ -1822,15 +1822,15 @@ function generateOptions(){
 
 let lastPicksData = [];
 
-// Racha de derrotas: desde 2 seguidas, un 🧊 por cada derrota.
+// Racha de derrotas: desde 2 seguidas, 🧊 con la cantidad (igual que el 🔥).
 function coldIcon(lossStreak){
-  return lossStreak >= 2 ? '🧊'.repeat(lossStreak) : '';
+  return lossStreak >= 2 ? '🧊' : '';
 }
 
 function streakBadge(stat){
   if(!stat) return '';
   const cold = coldIcon(stat.lossStreak);
-  if(cold) return ` <span title="Racha de ${stat.lossStreak} derrotas" style="font-size:13px;">${cold}</span>`;
+  if(cold) return ` <span title="Racha de ${stat.lossStreak} derrotas" style="font-size:13px;">${cold}${stat.lossStreak}</span>`;
   if(!stat.streak || stat.streak < 2) return '';
   return ` <span title="Racha de ${stat.streak} victorias" style="font-size:13px;">🔥${stat.streak}</span>`;
 }
@@ -1855,7 +1855,7 @@ function playerExtras(p, agg){
   const icons = [];
   const cold = coldIcon(st.lossStreak);
   if(st.streak >= 2) icons.push(`🔥${st.streak}`);
-  else if(cold) icons.push(cold);
+  else if(cold) icons.push(`${cold}${st.lossStreak}`);
   (st.badges || []).forEach(b=>{ if(b.icon !== '🔥' && b.icon !== cold) icons.push(b.icon); });
   return icons.length ? '  ' + icons.join(' ') : '';
 }
