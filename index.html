@@ -1822,11 +1822,9 @@ function generateOptions(){
 
 let lastPicksData = [];
 
-// Racha de derrotas: 🥶 desde 3 seguidas, 🧊 desde 6.
+// Racha de derrotas: desde 2 seguidas, 🧊 con la cantidad (igual que el 🔥).
 function coldIcon(lossStreak){
-  if(lossStreak >= 6) return '🧊';
-  if(lossStreak >= 3) return '🥶';
-  return '';
+  return lossStreak >= 2 ? '🧊' : '';
 }
 
 function streakBadge(stat){
