@@ -588,6 +588,9 @@
           <label for="ghostRating">Puntaje (1.0-10.0)</label>
           <input type="number" class="ghost-input" id="ghostRating" min="1" max="10" step="0.1" value="6.0" style="width:80px;padding:10px 6px;">
         </div>
+        <label for="ghostIsGk" title="Si ataja, el puntaje es como arquero" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;align-self:flex-end;padding-bottom:12px;">
+          <input type="checkbox" id="ghostIsGk"> 🧤 Arquero
+        </label>
         <button class="btn-primary" id="addGhostBtn">👻 Agregar fantasma</button>
       </div>
     </div>
@@ -1322,6 +1325,9 @@ function renderPickList(){
       </div>
       ${p.ghost ? `
       <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+        <label title="Arquero (el puntaje es como arquero)" style="display:flex;align-items:center;gap:3px;cursor:pointer;font-size:13px;">
+          <input type="checkbox" data-ghost-gk ${p.isGoalkeeper ? 'checked' : ''}>🧤
+        </label>
         <input type="number" min="1" max="10" step="0.1" value="${p.rating.toFixed(1)}" class="ghost-input" data-ghost-rating title="Puntaje para este partido" style="width:64px;">
         <button class="btn-ghost" data-ghost-remove>Borrar</button>
       </div>` : ''}
@@ -1338,6 +1344,12 @@ function renderPickList(){
         p.rating = parseFloat(v.toFixed(1));
         e.target.value = p.rating.toFixed(1);
         savePlayers();
+      });
+      li.querySelector('[data-ghost-gk]').addEventListener('change', (e)=>{
+        p.isGoalkeeper = e.target.checked;
+        savePlayers();
+        renderGkPickSection();
+        updateCounter();
       });
       li.querySelector('[data-ghost-remove]').addEventListener('click', ()=>removeGhost(p.id));
     }
@@ -1365,8 +1377,9 @@ function removeGhost(id){
   renderAll();
 }
 
-function addGhost(name, rating, playing){
-  const g = {id: uid(), name, rating: parseFloat(rating.toFixed(1)), ghost: true, playing};
+// Un fantasma arquero usa el mismo puntaje para atajar (gkCombinedPower).
+function addGhost(name, rating, playing, isGoalkeeper){
+  const g = {id: uid(), name, rating: parseFloat(rating.toFixed(1)), ghost: true, playing, ...(isGoalkeeper ? {isGoalkeeper: true} : {})};
   players.push(g);
   return g;
 }
@@ -1376,9 +1389,11 @@ document.getElementById('addGhostBtn').addEventListener('click', ()=>{
   const name = nameInput.value.trim();
   if(!name){ nameInput.focus(); return; }
   const rating = Math.min(10, Math.max(1, parseFloat(document.getElementById('ghostRating').value) || 6));
-  addGhost(name, rating, true);
+  const gkInput = document.getElementById('ghostIsGk');
+  addGhost(name, rating, true, gkInput.checked);
   nameInput.value = '';
   document.getElementById('ghostRating').value = '6.0';
+  gkInput.checked = false;
   savePlayers();
   renderAll();
 });
@@ -1534,7 +1549,7 @@ function renderGkPickSection(){
     const label = document.createElement('label');
     label.innerHTML = `
       <input type="checkbox" value="${p.id}" ${selectedGkIds.has(p.id) ? 'checked' : ''}>
-      <span>${escapeHtml(p.name)}</span>
+      <span>${escapeHtml(displayName(p))}</span>
     `;
     label.querySelector('input').addEventListener('change', (e)=>{
       if(e.target.checked) selectedGkIds.add(p.id); else selectedGkIds.delete(p.id);
